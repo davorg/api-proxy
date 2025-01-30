@@ -46,6 +46,7 @@ get '/:api' => sub {
 
   #if ($response->is_success) {
     content_type $response->header('Content-Type');
+    response_header 'Access-Control-Allow-Origin' => '*';
     return $response->content;
   #} else {
   #  return status_bad_request("Failed to fetch data from Google Maps API");
