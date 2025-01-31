@@ -42,7 +42,14 @@ get '/:api' => sub {
     $url .= join '&', map { "$_=$params->{$_}" } keys %$params;
   }
 
+  my $referrer = request->header('Referer');
+
   my $ua = LWP::UserAgent->new;
+
+  $ua->default_header('Referer' => $referrer);  # Forward dynamically
+  $ua->default_header('User-Agent' => 'Mozilla/5.0');   # Avoid bot detection
+
+
   warn $url, "\n";
   my $response = $ua->get($url);
 
