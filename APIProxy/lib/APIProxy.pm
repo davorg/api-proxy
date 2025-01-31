@@ -47,7 +47,7 @@ get '/:api' => sub {
 
   if ($response->is_redirect) {
     my $redirect_url = $response->header('Location');
-    warn $response_url, "\n";
+    warn $redirect_url, "\n";
     $response = $ua->get($redirect_url);
   }
 
