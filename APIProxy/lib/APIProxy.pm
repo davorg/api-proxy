@@ -25,7 +25,8 @@ get '/:api' => sub {
   my $params;
   for (@{ $api->{params} }) {
     $params->{$_} = query_parameters->get($_);
-    return status_bad_request("Missing 'q' parameter") unless $params->{$_};
+    return status_bad_request("Missing '$_' parameter") unless $params->{$_};
+    $params->{$_} =~ s/ +/+/g;
   }
 
   my $api_key = $ENV{$api->{key}};
