@@ -42,7 +42,14 @@ get '/:api' => sub {
   }
 
   my $ua = LWP::UserAgent->new;
+  warn $url, "\n";
   my $response = $ua->get($url);
+
+  if ($response->is_redirect) {
+    my $redirect_url = $response->header('Location');
+    warn $response_url, "\n";
+    $response = $ua->get($redirect_url);
+  }
 
   #if ($response->is_success) {
     content_type $response->header('Content-Type');
