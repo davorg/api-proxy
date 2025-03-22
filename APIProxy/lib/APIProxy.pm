@@ -4,7 +4,7 @@ use LWP::UserAgent;
 use Dancer2::Plugin::Cache::CHI;
 use Time::HiRes qw(time);
 use JSON::MaybeXS;
-use feature 'try';
+use Try::Tiny;
 
 our $VERSION = '0.1';
 
@@ -124,22 +124,22 @@ get '/:api' => sub {
   my $response;
   try {
     $response = $ua->get($url);
-  } catch ($e) {
+  } catch {
     my $duration = time() - $start_time;
     log_request($api_name, $params, 'error', $duration);
-    return status_internal_error("Failed to connect to API: $e");
-  }
+    return status_internal_error("Failed to connect to API: $_");
+  };
 
   # Handle redirects
   while ($response->is_redirect) {
     my $redirect_url = $response->header('Location');
     try {
       $response = $ua->get($redirect_url);
-    } catch ($e) {
+    } catch {
       my $duration = time() - $start_time;
       log_request($api_name, $params, 'redirect_error', $duration);
-      return status_internal_error("Failed to follow redirect: $e");
-    }
+      return status_internal_error("Failed to follow redirect: $_");
+    };
   }
 
   # Handle response

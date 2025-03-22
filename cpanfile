@@ -3,6 +3,7 @@ requires 'LWP::UserAgent' => '6.67';
 requires 'Dancer2::Plugin::Cache::CHI' => '0.0.3';
 requires 'Time::HiRes' => '1.9764';
 requires 'JSON::MaybeXS' => '1.004005';
+requires 'Try::Tiny' => '0.31';
 
 # Development dependencies
 on 'develop' => sub {
