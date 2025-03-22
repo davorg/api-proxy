@@ -3,7 +3,7 @@ use Dancer2;
 use LWP::UserAgent;
 use Dancer2::Plugin::Cache::CHI;
 use Time::HiRes qw(time);
-use JSON::MaybeXS;
+use JSON::MaybeXS qw(encode_json decode_json);
 use Try::Tiny;
 
 our $VERSION = '0.1';
@@ -13,10 +13,10 @@ my $CACHE_TTL = 300;  # 5 minutes
 my $REQUEST_TIMEOUT = 30;  # seconds
 
 # Initialize caching
-plugin 'Cache::CHI' => {
+plugin('Cache::CHI' => {
   driver => 'File',
   root_dir => '/tmp/api_proxy_cache',
-};
+});
 
 # API configurations
 my %apis = (
