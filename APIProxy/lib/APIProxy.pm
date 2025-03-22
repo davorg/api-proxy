@@ -1,8 +1,7 @@
 package APIProxy;
 use Dancer2;
 use LWP::UserAgent;
-use Dancer2::Plugin::RateLimit;
-use Dancer2::Plugin::Cache;
+use Dancer2::Plugin::Cache::CHI;
 use Time::HiRes qw(time);
 use JSON::MaybeXS;
 use feature 'try';
@@ -12,18 +11,11 @@ our $VERSION = '0.1';
 # Configuration
 my $CACHE_TTL = 300;  # 5 minutes
 my $REQUEST_TIMEOUT = 30;  # seconds
-my $MAX_RATE = 100;  # requests per minute
-
-# Initialize rate limiting
-plugin 'RateLimit' => {
-  max_requests => $MAX_RATE,
-  time_window  => 60,
-};
 
 # Initialize caching
-plugin 'Cache' => {
+plugin 'Cache::CHI' => {
   driver => 'File',
-  root   => '/tmp/api_proxy_cache',
+  root_dir => '/tmp/api_proxy_cache',
 };
 
 # API configurations
