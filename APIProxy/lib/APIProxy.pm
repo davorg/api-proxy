@@ -3,7 +3,6 @@ use Dancer2;
 use LWP::UserAgent;
 use Dancer2::Plugin::Cache::CHI;
 use Time::HiRes qw(time);
-use JSON::MaybeXS;
 use Try::Tiny;
 
 our $VERSION = '0.1';
@@ -11,12 +10,6 @@ our $VERSION = '0.1';
 # Configuration
 my $CACHE_TTL = 300;  # 5 minutes
 my $REQUEST_TIMEOUT = 30;  # seconds
-
-# Initialize caching
-plugin 'Cache::CHI' => {
-  driver => 'File',
-  root_dir => '/tmp/api_proxy_cache',
-};
 
 # API configurations
 my %apis = (
@@ -42,7 +35,7 @@ sub log_request {
     ip        => request->remote_address,
   };
 
-  warn JSON::MaybeXS::encode_json($log_entry) . "\n";
+  warn to_json($log_entry) . "\n";
 }
 
 get '/' => sub {
@@ -156,6 +149,7 @@ get '/:api' => sub {
     log_request($api_name, $params, 'success', $duration);
 
     content_type $response->header('Content-Type');
+    warn 'Content-Type: ', $response->header('Content-Type'), "\n";
     response_header 'Access-Control-Allow-Origin' => '*';
     return $content;
   } else {
