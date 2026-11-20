@@ -10,6 +10,7 @@ our $VERSION = '1.0.0';
 # Configuration
 my $CACHE_TTL = 300;  # 5 minutes
 my $REQUEST_TIMEOUT = 30;  # seconds
+my $MAX_REDIRECTS = 5;
 
 # API configurations
 my %apis = (
@@ -89,6 +90,7 @@ get '/:api' => sub {
   # Setup UserAgent
   my $ua = LWP::UserAgent->new(
     timeout => $api->{timeout} || $REQUEST_TIMEOUT,
+    max_redirect => $MAX_REDIRECTS,
     agent   => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   );
 
@@ -134,25 +136,12 @@ get '/:api' => sub {
     );
   }
 
-  # Handle redirects
-  while ($response->is_redirect) {
-    my $redirect_url = $response->header('Location');
-    try {
-      $response = $ua->get($redirect_url);
-    } catch {
-      my $duration = time() - $start_time;
-      log_request($api_name, $params, 'redirect_error', $duration);
-      $request_error = $_;
-    };
-    if (defined $request_error) {
-      $request_error =~ s/\Q$api_key\E/[redacted]/g;
-      warn "Upstream redirect request failed: $request_error\n";
-      my $timed_out = $request_error =~ /timeout|timed?\s*out/i;
-      return error_response(
-        $timed_out ? 504 : 502,
-        $timed_out ? 'Upstream API request timed out' : 'Failed to follow upstream redirect',
-      );
-    }
+  # LWP follows relative and absolute redirects up to this UA's configured
+  # limit. A redirect response still present here has exceeded that limit.
+  if ($response->is_redirect) {
+    my $duration = time() - $start_time;
+    log_request($api_name, $params, 'redirect_limit', $duration);
+    return error_response(502, 'Upstream API exceeded the redirect limit');
   }
 
   # Handle response

@@ -31,24 +31,24 @@ mapping for `proxy.davecross.co.uk` is a one-time setup described in
 ```mermaid
 flowchart TD
     A[GET /:api] --> B{Known API name?}
-    B -->|No| N[404 helper]
+    B -->|No| N[JSON 404]
     B -->|Yes| C[Validate and transform required query parameters]
     C --> D[Read API key from process environment]
     D --> E[Look up API name and transformed parameters in CHI]
     E -->|Hit| F[Log cached request and return cached body]
     E -->|Miss| G[Build upstream URL with key and parameters]
-    G --> H[LWP GET with timeout and request headers]
-    H --> I[Follow remaining redirect responses manually]
-    I --> J{Successful upstream status?}
+    G --> H[LWP GET with timeout and five redirect hops]
+    H --> I{Redirect remains?}
+    I -->|Yes| R[Log redirect limit and return JSON 502]
+    I -->|No| J{Successful upstream status?}
     J -->|Yes| K[Cache body for 300 seconds]
     K --> L[Log success, set content type and CORS, return body]
     J -->|No| M[Log error and return JSON 502 or 504]
 ```
 
-This is the implemented flow, including the early cache return and manual
-redirect loop. Error branches for missing input/key and thrown exceptions are
-omitted from the diagram for readability. Their defects are recorded in the
-[review](review.md).
+This is the implemented flow, including the early cache return and LWP's
+bounded redirect handling. Error branches for missing input/key and thrown
+exceptions are omitted from the diagram for readability.
 
 ## Upstream request construction
 
@@ -74,10 +74,10 @@ agent, English language preference and `Accept-Encoding: gzip, deflate, br`.
 There is no persistent application-level HTTP client. Incoming authorization
 headers are not forwarded by this code.
 
-LWP's own redirect handling runs before the application's manual redirect loop.
-The extra loop has no hop limit and starts a fresh LWP request for every residual
-redirect. The timeout applies to LWP requests rather than imposing a total
-deadline on route execution.
+LWP follows up to five redirects, including relative `Location` values. If a
+redirect remains after that limit, the route returns a JSON 502 response. The
+timeout applies to individual LWP requests rather than imposing a total deadline
+on route execution.
 
 ## Cache and responses
 
