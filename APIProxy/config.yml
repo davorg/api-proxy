@@ -18,6 +18,13 @@ charset: "UTF-8"
 
 behind_proxy: true
 
+# Keep cache data private to this application in each worker process. No cache
+# directory is needed; entries are lost when the worker exits.
+plugins:
+  'Cache::CHI':
+    driver: Memory
+    global: 0
+
 # === Engines ===
 #
 # NOTE: All the engine configurations need to be under a single "engines:"

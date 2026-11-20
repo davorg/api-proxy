@@ -79,8 +79,15 @@ the current key cannot distinguish those responses.
 
 Only successful response bodies are cached, with a TTL of 300 seconds. The code
 does not store status or headers. Cache hits return before setting Content-Type
-or CORS, and a false or empty cached body is treated as a miss. No CHI driver is
-configured in the checked-in YAML, so cache initialization currently fails.
+or CORS, and a false or empty cached body is treated as a miss.
+
+The checked-in YAML configures CHI's Memory driver with `global: 0`. The plugin
+retains this private cache instance across requests within a worker. It requires
+no writable directory or external cache service, and both environments inherit
+the setting. Each Starman worker has its own entries; they are not shared across
+processes or preserved when a worker restarts. A shared production backend can
+be configured through environment YAML if needed; using Memory with `global: 1`
+only shares a datastore between cache instances in the same process.
 
 Fresh success responses use the upstream raw body and Content-Type, add wildcard
 CORS, and otherwise return the route's normal success status. Upstream status
