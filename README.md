@@ -21,6 +21,7 @@ test suite passes or that all proxy requests work.
 | `APIProxy/views/`, `APIProxy/public/` | Landing page templates, static assets and CGI/FastCGI entry points |
 | `APIProxy/t/` | Module-load, index-route and Google Maps route tests |
 | `app_service` | Daemon::Control wrapper around `/usr/bin/starman` |
+| `Dockerfile`, `bin/`, `.github/workflows/` | Cloud Run container, build/deploy scripts and workflows; see [DEPLOY.md](DEPLOY.md) |
 | `APIProxy/cpanfile` | Authoritative runtime, test, configuration and optional feature dependencies |
 | `cpanfile` | Loads the application dependency list for installation from the repository root |
 | `APIProxy/Makefile.PL` | Generates package prerequisites from the application cpanfile |
@@ -176,12 +177,24 @@ file logger and hides stack traces; the application also writes request records
 to stderr. `behind_proxy: true` is enabled in the shared config, so configure
 the deployment's reverse proxy and forwarded headers deliberately.
 
+## Google Cloud Run
+
+The Cloud Run deployment targets `https://proxy.davecross.co.uk` and follows the
+`feeds` build/deploy pattern. Pull requests test the container; successful
+`main` builds publish to Artifact Registry and deploy by immutable image digest
+with Workload Identity Federation. The API key is supplied from Secret Manager.
+
+See [DEPLOY.md](DEPLOY.md) for Google Cloud and GitHub setup, the one-time custom
+domain/DNS steps, local container commands and rollback. The Cloud Run container
+uses a non-root Starman process, honours `PORT`, and logs to stdout/stderr.
+
 ## Tests
 
 From the repository root:
 
 ```sh
 prove -IAPIProxy/lib -lv APIProxy/t
+prove -lv t/deployment_scripts.t
 ```
 
 The default suite needs no API key or outbound HTTP. The index test checks title

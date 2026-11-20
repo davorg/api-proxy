@@ -17,6 +17,15 @@ assets and error pages live under `public`.
 application and explicitly select production. They require their own web-server
 integration; they are not involved in the documented Plack/Starman launch path.
 
+For Cloud Run, the Docker image runs Starman directly as a non-root user on the
+injected `PORT`. `environments/cloud_run.yml` selects console logging and
+production error settings. `bin/build_container` publishes to Artifact Registry;
+`bin/deploy_container` deploys by digest with a dedicated runtime service account
+and a Secret Manager binding for the Google Maps key. GitHub's two deployment
+workflows test pull requests and publish/deploy only from `main`. The domain
+mapping for `proxy.davecross.co.uk` is a one-time setup described in
+[DEPLOY.md](../DEPLOY.md).
+
 ## API request flow
 
 ```mermaid

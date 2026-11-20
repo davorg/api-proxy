@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${PROJECT_ID:?PROJECT_ID is required}"
+REGION="${REGION:-europe-west1}"
+AR_REPO="${AR_REPO:-containers}"
+IMAGE_NAME="${IMAGE_NAME:-api-proxy}"
+SERVICE_NAME="${SERVICE_NAME:-api-proxy}"
+RUNTIME_SERVICE_ACCOUNT="${RUNTIME_SERVICE_ACCOUNT:-api-proxy-run@${PROJECT_ID}.iam.gserviceaccount.com}"
+GOOGLE_MAPS_API_KEY_SECRET="${GOOGLE_MAPS_API_KEY_SECRET:-google-maps-api-key}"
+GOOGLE_MAPS_API_KEY_SECRET_VERSION="${GOOGLE_MAPS_API_KEY_SECRET_VERSION:-1}"
+ALLOW_UNAUTH="${ALLOW_UNAUTH:-true}"
+WORKERS="${WORKERS:-2}"
+CONCURRENCY="${CONCURRENCY:-$WORKERS}"
+MEMORY="${MEMORY:-512Mi}"
+MIN_INSTANCES="${MIN_INSTANCES:-0}"
+MAX_INSTANCES="${MAX_INSTANCES:-3}"
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -z "${IMAGE_REF:-}" ]]; then
+    if [[ ! -f "$repo_root/image_ref.txt" ]]; then
+        echo "Error: set IMAGE_REF or run bin/build_container first" >&2
+        exit 1
+    fi
+    IMAGE_REF="$(cat "$repo_root/image_ref.txt")"
+fi
+
+# Always deploy a digest from this application's registry, including rollbacks.
+image_path="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}"
+digest="${IMAGE_REF#"${image_path}@"}"
+if [[ "$IMAGE_REF" != "${image_path}@${digest}" || ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    echo "Error: IMAGE_REF must be an immutable digest in $image_path" >&2
+    exit 1
+fi
+if [[ ! "$GOOGLE_MAPS_API_KEY_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: GOOGLE_MAPS_API_KEY_SECRET_VERSION must be a numeric version" >&2
+    exit 1
+fi
+if [[ ! "$WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: WORKERS must be a positive integer" >&2
+    exit 1
+fi
+if [[ "$ALLOW_UNAUTH" != true && "$ALLOW_UNAUTH" != false ]]; then
+    echo "Error: ALLOW_UNAUTH must be true or false" >&2
+    exit 1
+fi
+command -v gcloud >/dev/null 2>&1 || {
+    echo "Error: 'gcloud' is required" >&2
+    exit 1
+}
+
+args=(
+    run deploy "$SERVICE_NAME"
+    --project "$PROJECT_ID" --region "$REGION" --platform managed --quiet
+    --image "$IMAGE_REF" --port 8080
+    --service-account "$RUNTIME_SERVICE_ACCOUNT"
+    --memory "$MEMORY" --cpu 1 --concurrency "$CONCURRENCY" --timeout 60
+    --min-instances "$MIN_INSTANCES" --max-instances "$MAX_INSTANCES"
+    --update-env-vars "DANCER_ENVIRONMENT=cloud_run,PLACK_ENV=production,WORKERS=${WORKERS}"
+    --update-secrets "GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY_SECRET}:${GOOGLE_MAPS_API_KEY_SECRET_VERSION}"
+)
+if [[ "$ALLOW_UNAUTH" == true ]]; then
+    args+=(--allow-unauthenticated)
+else
+    args+=(--no-allow-unauthenticated)
+fi
+
+gcloud "${args[@]}"
+service_url="$(gcloud run services describe "$SERVICE_NAME" \
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+if [[ "$service_url" != https://* ]]; then
+    echo "Error: Cloud Run did not return a service URL" >&2
+    exit 1
+fi
+printf '%s\n' "$service_url" > "$repo_root/service_url.txt"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'service_url=%s\n' "$service_url" >> "$GITHUB_OUTPUT"
+fi
+printf 'Deployed service: %s\n' "$service_url"

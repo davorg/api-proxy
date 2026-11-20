@@ -61,6 +61,10 @@ on "develop" => sub {
     requires "Test::MockObject" => "1.20200102";
 };
 
+feature 'server', 'Run the PSGI application with Starman' => sub {
+    requires "Starman" => "0";
+};
+
 feature 'service', 'Run app_service with Starman' => sub {
     requires "Daemon::Control" => "0";
     requires "ENV::Util"       => "0";

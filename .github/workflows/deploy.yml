@@ -1,0 +1,49 @@
+name: Deploy to Cloud Run
+
+on:
+  workflow_call:
+    inputs:
+      digest:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: 'Immutable sha256 digest from a successful build'
+        required: true
+        type: string
+
+concurrency:
+  group: cloud-run-deploy-api-proxy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION || 'europe-west1' }}
+      AR_REPO: ${{ vars.GCP_AR_REPO || 'containers' }}
+      IMAGE_NAME: api-proxy
+      SERVICE_NAME: api-proxy
+      RUNTIME_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}
+      GOOGLE_MAPS_API_KEY_SECRET: ${{ vars.GOOGLE_MAPS_API_KEY_SECRET || 'google-maps-api-key' }}
+      GOOGLE_MAPS_API_KEY_SECRET_VERSION: ${{ vars.GOOGLE_MAPS_API_KEY_SECRET_VERSION || '1' }}
+      IMAGE_DIGEST: ${{ inputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Google Auth (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Deploy immutable image
+        run: |
+          export IMAGE_REF="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          bin/deploy_container
