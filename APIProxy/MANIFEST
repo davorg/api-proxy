@@ -1,6 +1,7 @@
 MANIFEST
 cpanfile
 config.yml
+apis.yml
 MANIFEST.SKIP
 .dancer
 Makefile.PL

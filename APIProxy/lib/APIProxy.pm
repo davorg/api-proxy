@@ -3,8 +3,11 @@ use Dancer2;
 use LWP::UserAgent;
 use HTTP::Message ();
 use Dancer2::Plugin::Cache::CHI;
+use File::Basename qw(dirname);
+use File::Spec;
 use Time::HiRes qw(time);
 use Try::Tiny;
+use YAML ();
 
 our $VERSION = '1.0.0';
 
@@ -13,16 +16,22 @@ my $CACHE_TTL = 300;  # 5 minutes
 my $REQUEST_TIMEOUT = 30;  # seconds
 my $MAX_REDIRECTS = 5;
 
-# API configurations
-my %apis = (
-  gmap_search => {
-    params => [ 'q' ],
-    url    => 'https://www.google.com/maps/embed/v1/search?key=KEY_HERE',
-    key    => 'GOOGLE_MAPS_API_KEY',
-    cache  => 1,
-    timeout => 30,
-  },
-);
+# Load API definitions from a configurable file. The checked-in file keeps the
+# current service usable by default, while deployments can provide their own.
+my $api_config_file = $ENV{APIPROXY_APIS_FILE}
+  || File::Spec->catfile(dirname(__FILE__), '..', 'apis.yml');
+my $apis = YAML::LoadFile($api_config_file);
+die "API configuration '$api_config_file' must contain a mapping\n"
+  unless ref($apis) eq 'HASH';
+for my $api_name (sort keys %$apis) {
+  my $api = $apis->{$api_name};
+  die "API configuration '$api_config_file': '$api_name' must be a mapping\n"
+    unless ref($api) eq 'HASH';
+  die "API configuration '$api_config_file': '$api_name' needs a URL and key name\n"
+    unless defined $api->{url} && defined $api->{key};
+  die "API configuration '$api_config_file': '$api_name' params must be a list\n"
+    unless ref($api->{params}) eq 'ARRAY';
+}
 
 # Logging helper
 sub log_request {
@@ -46,7 +55,7 @@ get '/' => sub {
 
 get '/:api' => sub {
   my $api_name = route_parameters->get('api');
-  my $api = $apis{$api_name};
+  my $api = $apis->{$api_name};
 
   return error_response(404, "API '$api_name' not found") unless $api;
 
