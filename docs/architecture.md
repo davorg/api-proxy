@@ -6,10 +6,11 @@
 `APIProxy` and returns `APIProxy->to_app`. Plack or Starman hosts that callable;
 there is no database, frontend build or background job system.
 
-`APIProxy/lib/APIProxy.pm` contains the application logic. Its lexical `%apis`
-registry is an allowlist of API names and upstream URL templates. Only
-`gmap_search` exists. Callers cannot supply an arbitrary initial upstream URL.
-The root route renders `views/index.tt` inside `views/layouts/main.tt`; static
+`APIProxy/lib/APIProxy.pm` contains the application logic. API definitions live
+in `APIProxy/apis.yml` by default; deployments can set `APIPROXY_APIS_FILE` to
+load another YAML file. The checked-in registry currently exposes only
+`gmap_search`. Callers cannot supply an arbitrary initial upstream URL. The
+root route renders `views/index.tt` inside `views/layouts/main.tt`; static
 assets and error pages live under `public`.
 
 `app_service` supervises Starman through Daemon::Control. The alternative
@@ -52,7 +53,7 @@ exceptions are omitted from the diagram for readability.
 
 ## Upstream request construction
 
-The `gmap_search` definition supplies:
+The `gmap_search` definition in `APIProxy/apis.yml` supplies:
 
 | Field | Value and purpose |
 | --- | --- |
@@ -140,10 +141,12 @@ and retention according to the application's deployment needs.
 
 ## Extending and operating the application
 
-To add an API, add a `%apis` entry with required parameter names, an upstream URL
-containing `KEY_HERE`, an environment-variable name for its key, a cache flag
-and a timeout. There is no dynamic registry loader. The current URL builder
-assumes the base URL already has a query string, because it appends `&`.
+To add an API, add a YAML mapping with required parameter names, an upstream
+URL containing `KEY_HERE`, an environment-variable name for its key, a cache
+flag and a timeout. The `APIPROXY_APIS_FILE` environment variable selects an
+alternate file. API names become route names, so an entry named `lastfm` is
+available at `/lastfm`. The current URL builder assumes the base URL already
+has a query string, because it appends `&`.
 
 Add isolated route tests for each new API. Different media types, request
 headers, upstream statuses and URL formats need deliberate handling; the

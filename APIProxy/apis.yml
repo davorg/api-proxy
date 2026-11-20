@@ -1,0 +1,9 @@
+# API names are also the route names. Each key names an environment variable
+# that contains the API secret; keep secret values out of this file.
+gmap_search:
+  params:
+    - q
+  url: https://www.google.com/maps/embed/v1/search?key=KEY_HERE
+  key: GOOGLE_MAPS_API_KEY
+  cache: 1
+  timeout: 30

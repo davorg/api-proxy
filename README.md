@@ -14,7 +14,8 @@ test suite passes or that all proxy requests work.
 
 | Path | Purpose |
 | --- | --- |
-| `APIProxy/lib/APIProxy.pm` | Routes, API registry, parameter handling, HTTP client, caching and request logging |
+| `APIProxy/lib/APIProxy.pm` | Routes, parameter handling, HTTP client, caching and request logging |
+| `APIProxy/apis.yml` | Checked-in API definitions; override its path with `APIPROXY_APIS_FILE` |
 | `APIProxy/bin/app.psgi` | Loads the application and returns its PSGI callable |
 | `APIProxy/config.yml` | Shared Dancer settings, including template engine and reverse-proxy support |
 | `APIProxy/environments/` | Development and production logging/error settings |
@@ -121,9 +122,13 @@ it, and reports unsupported or malformed encodings as a 502 response.
 
 ## Configuration and service operation
 
-The application requires `GOOGLE_MAPS_API_KEY` for its only API. API definitions,
-the 300-second cache TTL and 30-second HTTP timeout are in `APIProxy.pm`, rather
-than environment variables. `APIProxy/config.yml` configures CHI's
+The checked-in `APIProxy/apis.yml` defines the `gmap_search` API. Set
+`APIPROXY_APIS_FILE` to load API definitions from another YAML file; the file
+must contain a mapping from API names to `params`, `url`, and `key` fields, with
+optional `cache` and `timeout` fields. Definitions are loaded and validated at
+process startup. The key field names an environment variable, such as
+`GOOGLE_MAPS_API_KEY`; keep secret values out of the YAML file. The 300-second
+cache TTL remains in `APIProxy.pm`. `APIProxy/config.yml` configures CHI's
 [Memory driver](https://metacpan.org/pod/CHI::Driver::Memory) with `global: 0`,
 giving the application a private cache in each process.
 
@@ -160,6 +165,7 @@ DANCER_ENVIRONMENT=production
 | `PROXY_WORKER_COUNT` | Adds Starman `--workers <count>` when set |
 | `PROXY_APP_PRELOAD` | Any nonempty value other than `0` adds `--preload-app`; use empty or `0` to disable |
 | `DANCER_ENVIRONMENT` | Selects Dancer's environment; the wrapper does not force production |
+| `APIPROXY_APIS_FILE` | Optional path to a YAML file containing API definitions; defaults to `APIProxy/apis.yml` |
 
 The service identity and filesystem paths have no application-provided defaults.
 Prepare the account, log directory and PID-file permissions for the deployment.
