@@ -2,6 +2,8 @@ package APIProxy;
 use Dancer2;
 use LWP::UserAgent;
 use HTTP::Message ();
+use URI;
+use URI::Escape qw(uri_escape_utf8);
 use Dancer2::Plugin::Cache::CHI;
 use File::Basename qw(dirname);
 use File::Spec;
@@ -62,16 +64,13 @@ get '/:api' => sub {
   # Start timing the request
   my $start_time = time();
 
-  # Validate and sanitize parameters
-  my $params;
-  for (@{ $api->{params} }) {
-    my $value = query_parameters->get($_);
-    return error_response(400, "Missing '$_' parameter") unless $value;
-
-    # Sanitize input
-    $value =~ s/[^\w\s\-.,]/ /g;  # Remove special characters
-    $value =~ s/ +/+/g;           # Replace spaces with +
-    $params->{$_} = $value;
+  # Validate required parameters without changing the caller's search terms.
+  my $params = {};
+  for my $param (@{ $api->{params} }) {
+    my $value = query_parameters->get($param);
+    return error_response(400, "Missing '$param' parameter")
+      unless defined $value && $value =~ /\S/;
+    $params->{$param} = $value;
   }
 
   # Check API key
@@ -82,7 +81,9 @@ get '/:api' => sub {
 
   # Check cache if enabled
   if ($api->{cache}) {
-    $cache_key = join(':', $api_name, map { "$_=$params->{$_}" } sort keys %$params);
+    $cache_key = join(':', uri_escape_utf8($api_name), map {
+      uri_escape_utf8($_) . '=' . uri_escape_utf8($params->{$_})
+    } sort keys %$params);
     my $cached_response = cache->get($cache_key);
     if (defined $cached_response) {
       my $duration = time() - $start_time;
@@ -94,13 +95,21 @@ get '/:api' => sub {
     }
   }
 
-  # Construct URL
+  # Construct URL and encode each query component independently so values
+  # cannot add parameters and Unicode is sent as UTF-8.
   my $url = $api->{url};
-  $url =~ s/KEY_HERE/$api_key/;
-    
-  if (keys %$params) {
-    $url .= '&' . join '&', map { "$_=$params->{$_}" } keys %$params;
+  $url =~ s/KEY_HERE/uri_escape_utf8($api_key)/ge;
+  my $uri = URI->new($url);
+  my $query = $uri->query // '';
+  my @query_params = map {
+    uri_escape_utf8($_) . '=' . uri_escape_utf8($params->{$_})
+  } sort keys %$params;
+  if (@query_params) {
+    $query .= '&' if length $query;
+    $query .= join '&', @query_params;
   }
+  $uri->query($query);
+  $url = $uri->as_string;
 
   # Setup UserAgent
   my $ua = LWP::UserAgent->new(

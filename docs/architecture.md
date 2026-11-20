@@ -33,7 +33,7 @@ mapping for `proxy.davecross.co.uk` is a one-time setup described in
 flowchart TD
     A[GET /:api] --> B{Known API name?}
     B -->|No| N[JSON 404]
-    B -->|Yes| C[Validate and transform required query parameters]
+    B -->|Yes| C[Validate and preserve required query parameters]
     C --> D[Read API key from process environment]
     D --> E[Look up API name and transformed parameters in CHI]
     E -->|Hit| F[Log cached request and return cached body]
@@ -63,11 +63,11 @@ The `gmap_search` definition in `APIProxy/apis.yml` supplies:
 | `cache` | `1`, enabling CHI lookups and writes |
 | `timeout` | `30` seconds, passed to LWP::UserAgent |
 
-The route checks parameter truthiness, replaces characters outside
-`\w`, whitespace, hyphen, period and comma with spaces, and converts runs of
-literal spaces to `+`. It then appends parameters by string concatenation.
-This is destructive normalization rather than correct URL encoding: punctuation
-is lost and a whitespace-only query can become `+`.
+The route rejects missing and whitespace-only required parameters, then preserves
+the submitted value. `URI::Escape` percent-encodes each parameter name and
+value independently as UTF-8 before adding them to the configured upstream URL.
+Reserved characters therefore remain part of their value and cannot inject
+additional query parameters. The string `0` is valid.
 
 Each cache miss creates a new LWP::UserAgent. It forwards the incoming `Referer`
 if supplied and sets hardcoded browser-like headers, including a Chrome user
@@ -83,10 +83,11 @@ on route execution.
 
 ## Cache and responses
 
-Cache keys are the API name followed by sorted transformed parameter pairs,
-for example `gmap_search:q=Clapham+Common`. The environment key and incoming
+Cache keys are the API name followed by sorted percent-encoded parameter pairs,
+for example `gmap_search:q=Clapham%20Common`. The environment key and incoming
 `Referer` are not part of the key. If upstream output varies with the referrer,
-the current key cannot distinguish those responses.
+the current key cannot distinguish those responses. Encoding each value makes
+reserved characters unambiguous and prevents distinct searches from colliding.
 
 Successful decoded bodies and their upstream Content-Type are cached together,
 with a TTL of 300 seconds. Cache hits and fresh responses use the same helper to
@@ -145,8 +146,8 @@ To add an API, add a YAML mapping with required parameter names, an upstream
 URL containing `KEY_HERE`, an environment-variable name for its key, a cache
 flag and a timeout. The `APIPROXY_APIS_FILE` environment variable selects an
 alternate file. API names become route names, so an entry named `lastfm` is
-available at `/lastfm`. The current URL builder assumes the base URL already
-has a query string, because it appends `&`.
+available at `/lastfm`. Query parameters are appended whether or not the base
+URL already has a query string.
 
 Add isolated route tests for each new API. Different media types, request
 headers, upstream statuses and URL formats need deliberate handling; the
