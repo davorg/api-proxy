@@ -52,7 +52,11 @@ sub log_request {
 }
 
 get '/' => sub {
-  template 'index' => { 'title' => 'APIProxy' };
+  template 'index' => {
+    title          => 'API Proxy',
+    version        => $VERSION,
+    supported_apis => [ sort keys %$apis ],
+  };
 };
 
 my $api_route = sub {

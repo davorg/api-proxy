@@ -35,7 +35,7 @@ jobs:
           test "$(docker exec "$container" id -u)" != 0
           for _attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8081/ > /tmp/api-proxy-index.html; then
-              grep --quiet '<title>APIProxy</title>' /tmp/api-proxy-index.html
+              grep --quiet '<title>API Proxy</title>' /tmp/api-proxy-index.html
               exit 0
             fi
             sleep 1
