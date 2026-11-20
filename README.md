@@ -101,17 +101,17 @@ cached successful body for up to five minutes.
 | --- | --- |
 | `GET /` | Renders the informational landing page |
 | `GET /gmap_search?q=...` | Validates `q` and the environment key, checks cache, then fetches Google Maps Embed search HTML |
-| `GET /<unknown-api>` | Sets status 404 |
-| Missing or false `q` | Sets status 400; the string `0` is incorrectly treated as missing |
-| Missing `GOOGLE_MAPS_API_KEY` | Sets status 400, even though this is server configuration |
-| Non-successful upstream response | Sets status 400, including upstream server failures |
+| `GET /<unknown-api>` | Returns a JSON error with status 404 |
+| Missing or false `q` | Returns a JSON error with status 400; the string `0` is incorrectly treated as missing |
+| Missing `GOOGLE_MAPS_API_KEY` | Returns a JSON error with status 500 |
+| Upstream HTTP failure | Returns a JSON error with status 502; upstream timeouts use 504 |
+| Upstream transport exception | Returns a JSON error with status 502, or 504 when the failure reports a timeout |
 
-Error helpers intend to return `{ error => message }`, but there is no configured
-serializer, so clients currently receive an opaque `HASH(...)` body. Fresh
-successful upstream responses copy `Content-Type` and add
-`Access-Control-Allow-Origin: *`; cached responses skip those headers. See
-[#6](https://github.com/davorg/api-proxy/issues/6) and
-[#10](https://github.com/davorg/api-proxy/issues/10).
+Error responses use `Content-Type: application/json` and the same wildcard CORS
+header as fresh successful responses. Successful upstream response metadata on
+cache hits is still tracked by [#6](https://github.com/davorg/api-proxy/issues/6).
+The validation behavior for false `q` values is tracked by
+[#11](https://github.com/davorg/api-proxy/issues/11).
 
 ## Configuration and service operation
 

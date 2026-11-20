@@ -42,7 +42,7 @@ flowchart TD
     I --> J{Successful upstream status?}
     J -->|Yes| K[Cache body for 300 seconds]
     K --> L[Log success, set content type and CORS, return body]
-    J -->|No| M[Log error and call 400 helper]
+    J -->|No| M[Log error and return JSON 502 or 504]
 ```
 
 This is the implemented flow, including the early cache return and manual
@@ -105,10 +105,13 @@ Content-Encoding is neither forwarded nor decoded, making compressed content
 unusable. This service needs explicit response handling rather than assuming
 that returning the upstream body is sufficient.
 
-The three status helpers set 400, 404 or 500 and return an error hash. With no
-serializer configured, that hash becomes `HASH(...)` in the response body.
-The Try::Tiny catch blocks also return from the catch callback rather than the
-outer route, allowing execution to continue after an upstream exception.
+Errors are encoded as JSON by a route-local helper, so successful HTML responses
+are not affected by a global serializer. Unknown APIs return 404, invalid
+parameters return 400, and a missing server API key returns 500. Failed upstream
+HTTP responses and transport exceptions return 502; failures identified as
+timeouts return 504. Error responses use `application/json` and wildcard CORS.
+The exception callbacks save their failure for the outer route to handle, and
+the diagnostic is logged with the configured API key redacted.
 
 ## Configuration and logging
 
