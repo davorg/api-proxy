@@ -177,6 +177,15 @@ file logger and hides stack traces; the application also writes request records
 to stderr. `behind_proxy: true` is enabled in the shared config, so configure
 the deployment's reverse proxy and forwarded headers deliberately.
 
+## Versioning
+
+The release version lives in [`APIProxy/lib/APIProxy.pm`](APIProxy/lib/APIProxy.pm)
+and starts at `1.0.0`. Use SemVer `MAJOR.MINOR.PATCH` when preparing releases.
+Published container tags include that version and the source commit, for
+example `api-proxy:1.0.0-<full-commit-SHA>`. The build script also sets the image's
+`org.opencontainers.image.version` label. See [DEPLOY.md](DEPLOY.md#versioning)
+for the release and tagging rules.
+
 ## Google Cloud Run
 
 The Cloud Run deployment targets `https://proxy.davecross.co.uk` and follows the
