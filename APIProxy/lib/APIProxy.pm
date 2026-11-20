@@ -46,7 +46,7 @@ get '/:api' => sub {
   my $api_name = route_parameters->get('api');
   my $api = $apis{$api_name};
 
-  return status_not_found("API '$api_name' not found") unless $api;
+  return error_response(404, "API '$api_name' not found") unless $api;
 
   # Start timing the request
   my $start_time = time();
@@ -55,7 +55,7 @@ get '/:api' => sub {
   my $params;
   for (@{ $api->{params} }) {
     my $value = query_parameters->get($_);
-    return status_bad_request("Missing '$_' parameter") unless $value;
+    return error_response(400, "Missing '$_' parameter") unless $value;
 
     # Sanitize input
     $value =~ s/[^\w\s\-.,]/ /g;  # Remove special characters
@@ -65,7 +65,7 @@ get '/:api' => sub {
 
   # Check API key
   my $api_key = $ENV{$api->{key}};
-  return status_bad_request("Missing API key") unless $api_key;
+  return error_response(500, 'Server API key is not configured') unless $api_key;
 
   # Check cache if enabled
   if ($api->{cache}) {
@@ -115,13 +115,24 @@ get '/:api' => sub {
 
   # Make request with error handling
   my $response;
+  my $request_error;
   try {
     $response = $ua->get($url);
   } catch {
     my $duration = time() - $start_time;
     log_request($api_name, $params, 'error', $duration);
-    return status_internal_error("Failed to connect to API: $_");
+    $request_error = $_;
   };
+
+  if (defined $request_error) {
+    $request_error =~ s/\Q$api_key\E/[redacted]/g;
+    warn "Upstream API request failed: $request_error\n";
+    my $timed_out = $request_error =~ /timeout|timed?\s*out/i;
+    return error_response(
+      $timed_out ? 504 : 502,
+      $timed_out ? 'Upstream API request timed out' : 'Failed to connect to upstream API',
+    );
+  }
 
   # Handle redirects
   while ($response->is_redirect) {
@@ -131,8 +142,17 @@ get '/:api' => sub {
     } catch {
       my $duration = time() - $start_time;
       log_request($api_name, $params, 'redirect_error', $duration);
-      return status_internal_error("Failed to follow redirect: $_");
+      $request_error = $_;
     };
+    if (defined $request_error) {
+      $request_error =~ s/\Q$api_key\E/[redacted]/g;
+      warn "Upstream redirect request failed: $request_error\n";
+      my $timed_out = $request_error =~ /timeout|timed?\s*out/i;
+      return error_response(
+        $timed_out ? 504 : 502,
+        $timed_out ? 'Upstream API request timed out' : 'Failed to follow upstream redirect',
+      );
+    }
   }
 
   # Handle response
@@ -155,26 +175,23 @@ get '/:api' => sub {
   } else {
     my $duration = time() - $start_time;
     log_request($api_name, $params, 'error', $duration);
-    return status_bad_request("API request failed: " . $response->status_line);
+    my $timed_out = $response->code == 408
+      || $response->code == 504
+      || $response->status_line =~ /timeout|timed?\s*out/i;
+    my $status = $timed_out ? 504 : 502;
+    my $message = $timed_out
+      ? 'Upstream API request timed out'
+      : 'Upstream API returned HTTP ' . $response->code;
+    return error_response($status, $message);
   }
 };
 
-sub status_bad_request {
-  my ($message) = @_;
-  status 'bad_request';
-  return { error => $message };
-}
-
-sub status_not_found {
-  my ($message) = @_;
-  status 'not_found';
-  return { error => $message };
-}
-
-sub status_internal_error {
-  my ($message) = @_;
-  status 'internal_server_error';
-  return { error => $message };
+sub error_response {
+  my ($code, $message) = @_;
+  status $code;
+  content_type 'application/json';
+  response_header 'Access-Control-Allow-Origin' => '*';
+  return to_json({ error => $message });
 }
 
 true;
