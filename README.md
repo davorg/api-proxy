@@ -103,7 +103,7 @@ cached successful body for up to five minutes.
 | `GET /` | Renders the informational landing page |
 | `GET /gmap_search?q=...` | Validates `q` and the environment key, checks cache, then fetches Google Maps Embed search HTML |
 | `GET /<unknown-api>` | Returns a JSON error with status 404 |
-| Missing or false `q` | Returns a JSON error with status 400; the string `0` is incorrectly treated as missing |
+| Missing or whitespace-only `q` | Returns a JSON error with status 400; the string `0` is valid |
 | Missing `GOOGLE_MAPS_API_KEY` | Returns a JSON error with status 500 |
 | Upstream HTTP failure | Returns a JSON error with status 502; upstream timeouts use 504 |
 | Upstream transport exception | Returns a JSON error with status 502, or 504 when the failure reports a timeout |
