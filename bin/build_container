@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${PROJECT_ID:?PROJECT_ID is required}"
+REGION="${REGION:-europe-west1}"
+AR_REPO="${AR_REPO:-containers}"
+IMAGE_NAME="${IMAGE_NAME:-api-proxy}"
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+TAG="${TAG:-$(git -C "$repo_root" rev-parse HEAD)}"
+image_path="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}"
+image_tag="${image_path}:${TAG}"
+
+for command in gcloud docker; do
+    command -v "$command" >/dev/null 2>&1 || {
+        echo "Error: '$command' is required" >&2
+        exit 1
+    }
+done
+docker info >/dev/null
+
+# Provision the repository once, outside routine builds. Authentication or
+# permission errors must not be mistaken for an already-existing repository.
+gcloud artifacts repositories describe "$AR_REPO" \
+    --project "$PROJECT_ID" --location "$REGION" >/dev/null
+gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+docker build --pull --platform linux/amd64 \
+    --file "$repo_root/Dockerfile" --tag "$image_tag" "$repo_root"
+docker push "$image_tag"
+
+digest="$(gcloud artifacts docker images describe "$image_tag" \
+    --project "$PROJECT_ID" --format='value(image_summary.digest)')"
+if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    echo "Error: Artifact Registry did not return a valid image digest" >&2
+    exit 1
+fi
+
+image_ref="${image_path}@${digest}"
+printf '%s\n' "$image_ref" > "$repo_root/image_ref.txt"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+fi
+printf 'Built image: %s\n' "$image_ref"

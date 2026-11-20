@@ -1,0 +1,6 @@
+# Cloud Run collects stdout/stderr; avoid a local production log file.
+logger: "console"
+log: "warning"
+show_stacktrace: 0
+no_server_tokens: 1
+startup_info: 0
