@@ -87,9 +87,11 @@ for example `gmap_search:q=Clapham+Common`. The environment key and incoming
 `Referer` are not part of the key. If upstream output varies with the referrer,
 the current key cannot distinguish those responses.
 
-Only successful response bodies are cached, with a TTL of 300 seconds. The code
-does not store status or headers. Cache hits return before setting Content-Type
-or CORS, and a false or empty cached body is treated as a miss.
+Successful decoded bodies and their upstream Content-Type are cached together,
+with a TTL of 300 seconds. Cache hits and fresh responses use the same helper to
+set Content-Type and wildcard CORS. The presence of the cache entry identifies a
+hit, so an empty successful body is cached and returned without another
+upstream request.
 
 The checked-in YAML configures CHI's Memory driver with `global: 0`. The plugin
 retains this private cache instance across requests within a worker. It requires
