@@ -1,13 +1,9 @@
-requires 'Dancer2' => '0.300000';
-requires 'LWP::UserAgent' => '6.67';
-requires 'Dancer2::Plugin::Cache::CHI' => '0.0.3';
-requires 'Time::HiRes' => '1.9764';
-requires 'JSON::MaybeXS' => '1.004005';
-requires 'Try::Tiny' => '0.31';
+# Keep the application distribution self-contained and use its dependency list
+# for installations from the repository root as well.
+use File::Basename qw(dirname);
+use File::Spec;
 
-# Development dependencies
-on 'develop' => sub {
-    requires 'Test::More' => '1.302190';
-    requires 'Test::Exception' => '0.43';
-    requires 'Test::MockObject' => '1.20200102';
-}; 
+my $cpanfile = File::Spec->rel2abs(
+    File::Spec->catfile(dirname(__FILE__), 'APIProxy', 'cpanfile')
+);
+do $cpanfile or die "Cannot load $cpanfile: " . ($@ || $!);

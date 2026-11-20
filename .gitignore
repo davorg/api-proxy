@@ -1,1 +1,6 @@
 .env
+local/
+APIProxy/Makefile
+APIProxy/MYMETA.*
+APIProxy/blib/
+APIProxy/pm_to_blib

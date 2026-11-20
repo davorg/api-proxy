@@ -2,7 +2,7 @@ use strict;
 use warnings;
 
 use APIProxy;
-use Test::More tests => 2;
+use Test::More tests => 5;
 use Plack::Test;
 use HTTP::Request::Common;
 use Ref::Util qw<is_coderef>;
@@ -14,3 +14,6 @@ my $test = Plack::Test->create($app);
 my $res  = $test->request( GET '/' );
 
 ok( $res->is_success, '[GET /] successful' );
+like( $res->content, qr/<title>APIProxy<\/title>/, 'Template title is rendered' );
+like( $res->content, qr/Dave's API Proxy/, 'Index content is rendered in the layout' );
+unlike( $res->content, qr/<%/, 'No unexpanded template expressions' );

@@ -5,7 +5,7 @@ Google Maps Embed search responses using a server-side API key. It exposes one
 configured API, `gmap_search`, through a PSGI application. It returns upstream
 HTML rather than a structured places-search JSON result.
 
-The current checkout has confirmed startup, caching and HTTP response defects.
+The current checkout has confirmed caching and HTTP response defects.
 See the [review and issue list](docs/review.md) before deploying it. The commands
 below describe the existing entry points; they do not imply that the current
 test suite passes or that all proxy requests work.
@@ -21,44 +21,54 @@ test suite passes or that all proxy requests work.
 | `APIProxy/views/`, `APIProxy/public/` | Landing page templates, static assets and CGI/FastCGI entry points |
 | `APIProxy/t/` | Module-load, index-route and Google Maps route tests |
 | `app_service` | Daemon::Control wrapper around `/usr/bin/starman` |
-| `cpanfile` | Root proxy dependencies and development dependencies |
-| `APIProxy/cpanfile`, `APIProxy/Makefile.PL` | Additional, currently inconsistent application dependency/package metadata |
+| `APIProxy/cpanfile` | Authoritative runtime, test, configuration and optional feature dependencies |
+| `cpanfile` | Loads the application dependency list for installation from the repository root |
+| `APIProxy/Makefile.PL` | Generates package prerequisites from the application cpanfile |
 
 Read [the architecture notes](docs/architecture.md) for request flow, configuration,
 logging and extension points.
 
 ## Install dependencies
 
-Use Perl and `cpanm`, preferably with a project-specific local library. From the
-repository root, install both sets of declared dependencies:
+Use Perl 5.14 or newer and `cpanm`, preferably with a project-specific local
+library. The application declares Dancer2 1.1.2 or newer and explicitly installs
+its template engine, including when using Dancer2 2.x. From the repository root:
 
 ```sh
-cpanm --installdeps --with-develop .
-cpanm --installdeps ./APIProxy
+cpanm --installdeps --with-configure .
 ```
 
-The manifests are incomplete ([#4](https://github.com/davorg/api-proxy/issues/4)).
-These additional direct dependencies cover the configured template engine,
-HTTPS transport and test imports:
+This installs the declared runtime, test and configuration dependencies,
+including HTTPS support. For additional development tools, add `--with-develop`.
+For the optional `app_service` wrapper, enable the `service` feature:
 
 ```sh
-cpanm Dancer2::Template::Simple LWP::Protocol::https Plack HTTP::Request::Common Ref::Util
+cpanm --installdeps --with-configure --with-feature=service .
 ```
 
-`Dancer2::Template::Simple` is a
-[separate distribution](https://metacpan.org/pod/Dancer2::Template::Simple)
-for Dancer2 2.x. The existing templates use its `<% ... %>` syntax; changing only
-`template: simple` to `template: tiny` is not a complete migration.
+The application uses Dancer2's Template Toolkit engine and explicitly declares
+its `Template` dependency. The configured `<% ... %>` delimiters preserve the
+existing templates on Dancer2 1.x and 2.x without requiring the retired Simple
+engine.
 
-For the optional service wrapper, also install:
+Both commands can also run from `APIProxy/`: the root cpanfile loads the same
+authoritative list. The legacy FastCGI dispatcher additionally needs the `fcgi`
+feature (`--with-feature=fcgi`); CGI needs no extra feature. The existing
+`accelerate` feature remains available for optional XS modules. To use an
+isolated local library:
 
 ```sh
-cpanm Daemon::Control ENV::Util Starman
+cpanm --local-lib-contained local --installdeps --with-configure --with-feature=service .
+export PERL5LIB="$PWD/local/lib/perl5${PERL5LIB:+:$PERL5LIB}"
+export PATH="$PWD/local/bin:$PATH"
 ```
 
-Check that the Starman executable is actually at `/usr/bin/starman` before using
-`app_service`; that path is hardcoded. Installing the modules does not resolve
-the missing cache configuration or the other runtime issues in the review.
+Choose the installation directory to suit the deployment and keep it out of
+version control. Check that the Starman executable is at `/usr/bin/starman`
+before using `app_service`; that path is hardcoded and a local-library install
+places its executable under `local/bin` instead. Installing dependencies does
+not resolve the missing cache configuration or the other runtime issues in the
+review.
 
 ## Run locally
 
@@ -165,8 +175,10 @@ From the repository root:
 prove -IAPIProxy/lib -lv APIProxy/t
 ```
 
-The three files declare seven assertions in total. The Google Maps route test
-currently has no dummy key, mocked upstream or isolated cache: it fails without
+The three files declare ten assertions in total. The index test verifies that
+the template title and page content render without unexpanded expressions.
+The Google Maps route test currently has no dummy key, mocked upstream or
+isolated cache: it fails without
 a key and can contact Google if configured. Avoid supplying a real key for
 routine tests; making the suite independent of credentials and network access
 is tracked in [#12](https://github.com/davorg/api-proxy/issues/12).
