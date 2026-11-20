@@ -69,14 +69,19 @@ get '/:api' => sub {
   my $api_key = $ENV{$api->{key}};
   return error_response(500, 'Server API key is not configured') unless $api_key;
 
+  my $cache_key;
+
   # Check cache if enabled
   if ($api->{cache}) {
-    my $cache_key = join(':', $api_name, map { "$_=$params->{$_}" } sort keys %$params);
+    $cache_key = join(':', $api_name, map { "$_=$params->{$_}" } sort keys %$params);
     my $cached_response = cache->get($cache_key);
-    if ($cached_response) {
+    if (defined $cached_response) {
       my $duration = time() - $start_time;
       log_request($api_name, $params, 'cached', $duration);
-      return $cached_response;
+      return success_response(
+        $cached_response->{content},
+        $cached_response->{content_type},
+      );
     }
   }
 
@@ -162,19 +167,21 @@ get '/:api' => sub {
       return error_response(502, 'Upstream API returned unsupported or invalid content encoding');
     }
         
-    # Cache successful responses if enabled
+    my $upstream_content_type = $response->header('Content-Type');
+
+    # Cache the body and metadata together. The entry itself marks a hit, even
+    # when the successful response body is empty.
     if ($api->{cache}) {
-      my $cache_key = join(':', $api_name, map { "$_=$params->{$_}" } sort keys %$params);
-      cache->set($cache_key, $content, $CACHE_TTL);
+      cache->set($cache_key, {
+        content      => $content,
+        content_type => $upstream_content_type,
+      }, $CACHE_TTL);
     }
 
     my $duration = time() - $start_time;
     log_request($api_name, $params, 'success', $duration);
 
-    content_type $response->header('Content-Type');
-    warn 'Content-Type: ', $response->header('Content-Type'), "\n";
-    response_header 'Access-Control-Allow-Origin' => '*';
-    return $content;
+    return success_response($content, $upstream_content_type);
   } else {
     my $duration = time() - $start_time;
     log_request($api_name, $params, 'error', $duration);
@@ -195,6 +202,13 @@ sub error_response {
   content_type 'application/json';
   response_header 'Access-Control-Allow-Origin' => '*';
   return to_json({ error => $message });
+}
+
+sub success_response {
+  my ($content, $upstream_content_type) = @_;
+  content_type $upstream_content_type if defined $upstream_content_type;
+  response_header 'Access-Control-Allow-Origin' => '*';
+  return $content;
 }
 
 true;
