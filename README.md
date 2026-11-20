@@ -66,9 +66,8 @@ export PATH="$PWD/local/bin:$PATH"
 Choose the installation directory to suit the deployment and keep it out of
 version control. Check that the Starman executable is at `/usr/bin/starman`
 before using `app_service`; that path is hardcoded and a local-library install
-places its executable under `local/bin` instead. Installing dependencies does
-not resolve the missing cache configuration or the other runtime issues in the
-review.
+places its executable under `local/bin` instead. The remaining HTTP response
+issues are recorded in the review.
 
 ## Run locally
 
@@ -92,9 +91,8 @@ curl -i --get --data-urlencode 'q=Clapham Common' http://127.0.0.1:5000/gmap_sea
 ```
 
 The second command makes a real upstream request on a cache miss and requires a
-key accepted by Google Maps Embed. With the checked-in cache configuration, a
-key-bearing request currently fails before reaching Google
-([#5](https://github.com/davorg/api-proxy/issues/5)).
+key accepted by Google Maps Embed. A repeated query in the same worker uses the
+cached successful body for up to five minutes.
 
 ## Routes
 
@@ -118,7 +116,18 @@ successful upstream responses copy `Content-Type` and add
 
 The application requires `GOOGLE_MAPS_API_KEY` for its only API. API definitions,
 the 300-second cache TTL and 30-second HTTP timeout are in `APIProxy.pm`, rather
-than environment variables. There is currently no configured cache driver.
+than environment variables. `APIProxy/config.yml` configures CHI's
+[Memory driver](https://metacpan.org/pod/CHI::Driver::Memory) with `global: 0`,
+giving the application a private cache in each process.
+
+The same cache configuration applies in development and production. No cache
+directory, filesystem permissions or external cache service is required.
+Starman workers do **not** share cache entries: each worker may fetch a query
+once during its own five-minute cache window. Entries disappear when a worker
+restarts. For a deployment that needs sharing across workers, override the
+`plugins` / `Cache::CHI` settings with a shared backend and provide its storage
+and permissions explicitly; `global: 1` on the Memory driver does not share data
+across processes.
 
 The service wrapper reads `.env` from its working directory. Create an untracked
 `.env` in the repository root with values appropriate to the host:
@@ -182,6 +191,11 @@ It verifies validation, upstream URL construction, cache hits and a fresh fetch
 after clearing the test cache. A transport guard fails any unexpected HTTP
 request locally. Host credentials and deployment cache contents do not affect
 these tests.
+
+A separate regression test loads the checked-in cache configuration without
+overriding its plugin settings. It checks fresh and cached responses, separation
+from unrelated caches, and the 300-second expiration boundary using CHI's test
+clock rather than sleeping.
 
 A separate live-provider smoke test is available under `APIProxy/xt/`. It skips
 unless explicitly enabled and requires an exported real key:

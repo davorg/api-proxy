@@ -124,3 +124,20 @@ included in the application distribution manifest. The default test command
 does not run the live check; explicitly including `xt` without the flag reports
 it as skipped. Runtime fixes, including production cache configuration in
 [#5](https://github.com/davorg/api-proxy/issues/5), remain separate.
+
+## Cache configuration follow-up
+
+The checked-in configuration for [#5](https://github.com/davorg/api-proxy/issues/5)
+now selects CHI's Memory driver with `global: 0`. Both development and production
+use a private cache in each worker, with no cache-directory setup. Entries are
+not shared across workers and are lost when a worker restarts.
+
+The cache regression test loads the application's YAML without replacing the
+plugin settings. With a dummy key and mocked HTTP it verifies that the first
+request succeeds, repeated requests return the stored body without extra
+upstream calls, unrelated cache instances are untouched, and an entry is reused
+at 299 seconds but fetched again at the 300-second expiration boundary. It uses
+CHI's test clock and performs no real requests or sleeps. Cached headers and
+upstream content encoding remain tracked separately in
+[#6](https://github.com/davorg/api-proxy/issues/6) and
+[#7](https://github.com/davorg/api-proxy/issues/7).
