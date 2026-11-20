@@ -70,9 +70,10 @@ is lost and a whitespace-only query can become `+`.
 
 Each cache miss creates a new LWP::UserAgent. It forwards the incoming `Referer`
 if supplied and sets hardcoded browser-like headers, including a Chrome user
-agent, English language preference and `Accept-Encoding: gzip, deflate, br`.
-There is no persistent application-level HTTP client. Incoming authorization
-headers are not forwarded by this code.
+agent and English language preference. Its `Accept-Encoding` header lists only
+the encodings supported by the installed `HTTP::Message` decoders. There is no
+persistent application-level HTTP client. Incoming authorization headers are
+not forwarded by this code.
 
 LWP follows up to five redirects, including relative `Location` values. If a
 redirect remains after that limit, the route returns a JSON 502 response. The
@@ -98,12 +99,14 @@ processes or preserved when a worker restarts. A shared production backend can
 be configured through environment YAML if needed; using Memory with `global: 1`
 only shares a datastore between cache instances in the same process.
 
-Fresh success responses use the upstream raw body and Content-Type, add wildcard
-CORS, and otherwise return the route's normal success status. Upstream status
-codes and other metadata are not transparently preserved. In particular,
-Content-Encoding is neither forwarded nor decoded, making compressed content
-unusable. This service needs explicit response handling rather than assuming
-that returning the upstream body is sufficient.
+Fresh success responses use `decoded_content`, retain the upstream Content-Type,
+add wildcard CORS, and otherwise return the route's normal success status.
+Supported content encodings are decoded before the body is cached or returned;
+the corresponding `Content-Encoding` is not forwarded. Textual charsets are
+decoded by `HTTP::Message` before Dancer applies the configured UTF-8 response
+handling. If an upstream response uses an unsupported or malformed encoding,
+the route returns a JSON 502 and does not cache that response. Upstream status
+codes and other metadata are not transparently preserved.
 
 Errors are encoded as JSON by a route-local helper, so successful HTML responses
 are not affected by a global serializer. Unknown APIs return 404, invalid

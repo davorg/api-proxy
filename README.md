@@ -107,12 +107,17 @@ cached successful body for up to five minutes.
 | Upstream HTTP failure | Returns a JSON error with status 502; upstream timeouts use 504 |
 | Upstream transport exception | Returns a JSON error with status 502, or 504 when the failure reports a timeout |
 | Upstream redirect chain over five hops | Returns a JSON error with status 502; shorter absolute and relative redirects are followed by LWP |
+| Unsupported or invalid upstream content encoding | Returns a JSON error with status 502 |
 
 Error responses use `Content-Type: application/json` and the same wildcard CORS
 header as fresh successful responses. Successful upstream response metadata on
 cache hits is still tracked by [#6](https://github.com/davorg/api-proxy/issues/6).
 The validation behavior for false `q` values is tracked by
 [#11](https://github.com/davorg/api-proxy/issues/11).
+
+The proxy advertises only content encodings supported by its installed
+`HTTP::Message` decoder. It decodes upstream content before caching or returning
+it, and reports unsupported or malformed encodings as a 502 response.
 
 ## Configuration and service operation
 
