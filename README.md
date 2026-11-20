@@ -175,13 +175,29 @@ From the repository root:
 prove -IAPIProxy/lib -lv APIProxy/t
 ```
 
-The three files declare ten assertions in total. The index test verifies that
-the template title and page content render without unexpanded expressions.
-The Google Maps route test currently has no dummy key, mocked upstream or
-isolated cache: it fails without
-a key and can contact Google if configured. Avoid supplying a real key for
-routine tests; making the suite independent of credentials and network access
-is tracked in [#12](https://github.com/davorg/api-proxy/issues/12).
+The default suite needs no API key or outbound HTTP. The index test checks title
+and page rendering. The Google Maps route test scopes a dummy key, supplies
+fixture HTML through a mocked HTTP client, and uses a private in-memory cache.
+It verifies validation, upstream URL construction, cache hits and a fresh fetch
+after clearing the test cache. A transport guard fails any unexpected HTTP
+request locally. Host credentials and deployment cache contents do not affect
+these tests.
+
+A separate live-provider smoke test is available under `APIProxy/xt/`. It skips
+unless explicitly enabled and requires an exported real key:
+
+```sh
+API_PROXY_LIVE_TESTS=1 prove -IAPIProxy/lib -lv APIProxy/xt/gmap_search_live.t
+```
+
+This command contacts Google and can consume API quota. The live check uses a
+private memory cache and does not validate production cache configuration.
+Existing upstream handling defects may still cause it to fail. To check that
+the live test skips by default alongside the offline suite:
+
+```sh
+prove -IAPIProxy/lib -lv APIProxy/t APIProxy/xt
+```
 
 The [review](docs/review.md) records the actual test result, diagnostic overrides,
 reproduced defects and suggested order of fixes.
