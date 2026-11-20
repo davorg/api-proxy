@@ -1,25 +1,36 @@
 use strict;
 use warnings;
-use ExtUtils::MakeMaker;
+use ExtUtils::MakeMaker 6.64;
+use Module::CPANfile 1.1004;
 
-# Normalize version strings like 6.30_02 to 6.3002,
-# so that we can do numerical comparisons on it.
-my $eumm_version = $ExtUtils::MakeMaker::VERSION;
-$eumm_version =~ s/_//;
+my $cpanfile = Module::CPANfile->load('cpanfile');
+my $prereqs = $cpanfile->prereq_specs;
+my %runtime = %{ $prereqs->{runtime}{requires} };
+my $perl_version = delete $runtime{perl};
 
 WriteMakefile(
     NAME                => 'APIProxy',
     AUTHOR              => q{YOUR NAME <youremail@example.com>},
     VERSION_FROM        => 'lib/APIProxy.pm',
     ABSTRACT            => 'YOUR APPLICATION ABSTRACT',
-    ($eumm_version >= 6.3001
-      ? ('LICENSE'=> 'perl')
-      : ()),
+    LICENSE             => 'perl',
     PL_FILES            => {},
-    PREREQ_PM => {
-        'Test::More' => 0,
-        'YAML'       => 0,
-        'Dancer2'     => 1.1.2,
+    MIN_PERL_VERSION    => $perl_version,
+    PREREQ_PM           => \%runtime,
+    CONFIGURE_REQUIRES  => $prereqs->{configure}{requires},
+    BUILD_REQUIRES      => $prereqs->{build}{requires},
+    TEST_REQUIRES       => $prereqs->{test}{requires},
+    META_MERGE          => {
+        'meta-spec' => { version => 2 },
+        prereqs => $prereqs,
+        optional_features => {
+            map {
+                $_->identifier => {
+                    description => $_->description,
+                    prereqs => $_->prereqs->as_string_hash,
+                }
+            } $cpanfile->features
+        },
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'APIProxy-*' },

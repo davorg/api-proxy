@@ -96,8 +96,9 @@ outer route, allowing execution to continue after an upstream exception.
 
 ## Configuration and logging
 
-`config.yml` selects the Simple template engine, main layout, UTF-8 handling
-and `behind_proxy: true`. `environments/development.yml` selects console/core
+`config.yml` selects Template Toolkit with `<% ... %>` delimiters, the main
+layout, UTF-8 handling and `behind_proxy: true`.
+`environments/development.yml` selects console/core
 logging and stack traces. `environments/production.yml` selects warning-level
 file logging, disables stack traces and suppresses server tokens.
 

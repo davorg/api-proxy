@@ -25,19 +25,13 @@ behind_proxy: true
 # all "engines:" lines except the first.  Otherwise, only the last
 # "engines:" block will take effect.
 
-# template engine
-# simple: default and very basic template engine
-# template_toolkit: TT
-
-template: "simple"
-
-# template: "template_toolkit"
-# engines:
-#   template:
-#     template_toolkit:
-#       # Note: start_tag and end_tag are regexes
-#       start_tag: '<%'
-#       end_tag:   '%>'
+# Template Toolkit is declared in cpanfile. Retain the existing delimiters.
+template: "template_toolkit"
+engines:
+  template:
+    template_toolkit:
+      start_tag: '<%'
+      end_tag:   '%>'
 
 # session engine
 #

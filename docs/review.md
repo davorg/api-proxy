@@ -83,3 +83,28 @@ request [#1](https://github.com/davorg/api-proxy/issues/1) was already closed.
 
 Add regression coverage as each defect is fixed. Keep live-provider integration
 checks separate from the default suite.
+
+## Dependency follow-up
+
+The dependency setup for [#4](https://github.com/davorg/api-proxy/issues/4) now
+uses `APIProxy/cpanfile` as its authoritative list. The root cpanfile loads it,
+and `Makefile.PL` derives package prerequisites and optional features from it.
+Template Toolkit replaces Simple with the existing `<% ... %>` delimiters.
+The original review results and issue table above describe the reviewed commit.
+
+A fresh self-contained installation of runtime, test, configuration and
+development dependencies plus the `service` and `fcgi` features installed 116
+distributions. Dependency tests were skipped during that installation; the
+application checks below ran afterward with non-core global modules excluded.
+The resulting environment used Perl 5.42.3, Dancer2 2.3.0 and Template 3.106.
+
+- The PSGI entry point loads and selects Template Toolkit.
+- All six module-load and index assertions pass, including title/content
+  rendering and absence of unexpanded template expressions.
+- HTTPS, service and FastCGI dependencies load; the service and dispatcher
+  scripts compile without starting a daemon or contacting Google.
+- Root and application manifests, and generated distribution metadata, agree
+  across prerequisite phases and optional features.
+- The full suite runs all ten assertions. Only the two Google Maps success
+  assertions fail with the key unset, as tracked in
+  [#12](https://github.com/davorg/api-proxy/issues/12).
