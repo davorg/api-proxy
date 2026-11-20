@@ -1,6 +1,7 @@
 package APIProxy;
 use Dancer2;
 use LWP::UserAgent;
+use HTTP::Message ();
 use Dancer2::Plugin::Cache::CHI;
 use Time::HiRes qw(time);
 use Try::Tiny;
@@ -102,7 +103,7 @@ get '/:api' => sub {
   $ua->default_header(
     'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     'Accept-Language' => 'en-US,en;q=0.9',
-    'Accept-Encoding' => 'gzip, deflate, br',
+    'Accept-Encoding' => HTTP::Message::decodable(),
     'Connection' => 'keep-alive',
     'Sec-Ch-Ua' => '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
     'Sec-Ch-Ua-Mobile' => '?0',
@@ -146,7 +147,20 @@ get '/:api' => sub {
 
   # Handle response
   if ($response->is_success) {
-    my $content = $response->content;
+    my $content;
+    my $decode_error;
+    try {
+      $content = $response->decoded_content(raise_error => 1);
+    } catch {
+      $decode_error = $_;
+    };
+
+    unless (defined $content) {
+      my $duration = time() - $start_time;
+      log_request($api_name, $params, 'decode_error', $duration);
+      warn "Failed to decode upstream response: $decode_error\n";
+      return error_response(502, 'Upstream API returned unsupported or invalid content encoding');
+    }
         
     # Cache successful responses if enabled
     if ($api->{cache}) {
