@@ -1,4 +1,11 @@
-<div id="page">
+<main id="page">
   <h1>Dave's API Proxy</h1>
-  <p>No user-servicable parts</p>
-</div>
+  <p>This service provides a small set of HTTP endpoints for accessing supported external APIs through one URL.</p>
+
+  <h2>Supported APIs</h2>
+  <ul>
+  <% FOREACH api IN supported_apis %>
+    <li><code>/<% api %></code></li>
+  <% END %>
+  </ul>
+</main>
