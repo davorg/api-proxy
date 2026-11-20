@@ -55,8 +55,9 @@ It needs no writable application directory. The normal per-process memory cache
 applies; it is not shared across workers or Cloud Run instances.
 
 The build context excludes `.env`, GitHub's generated credentials and unrelated
-repository files. `GOOGLE_MAPS_API_KEY` is injected at runtime from Secret Manager,
-never baked into the image or supplied as a Docker build argument.
+repository files. `GOOGLE_MAPS_API_KEY` and `LASTFM_API_KEY` are injected at
+runtime from Secret Manager, never baked into the image or supplied as Docker
+build arguments.
 
 For a local smoke test, with no API key required:
 
@@ -105,11 +106,28 @@ gcloud secrets add-iam-policy-binding google-maps-api-key \
   --role roles/secretmanager.secretAccessor
 ```
 
-Set the configured version to the number returned by `versions add`; it is `1`
-for a new secret. The deployment deliberately uses a numeric version rather
-than `latest`. To rotate the key, add another secret version, update the GitHub
+Create a second secret for the Last.fm key and grant the same runtime account
+access before deploying a build that includes the `lastfm` API:
+
+```sh
+gcloud secrets create lastfm-api-key --replication-policy=automatic \
+  --project "$PROJECT_ID"
+read -r -s -p 'Last.fm API key: ' LASTFM_KEY
+printf '\n'
+printf '%s' "$LASTFM_KEY" | gcloud secrets versions add lastfm-api-key \
+  --data-file=- --project "$PROJECT_ID"
+unset LASTFM_KEY
+gcloud secrets add-iam-policy-binding lastfm-api-key \
+  --project "$PROJECT_ID" \
+  --member "serviceAccount:api-proxy-run@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role roles/secretmanager.secretAccessor
+```
+
+Set each configured version to the number returned by `versions add`; it is `1`
+for a new secret. The deployment deliberately uses numeric versions rather
+than `latest`. To rotate a key, add another secret version, update its GitHub
 variable below, and redeploy a known image digest. The runtime account needs
-access to this secret, not project-wide editor privileges.
+access to these secrets, not project-wide editor privileges.
 
 Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation)
 for the GitHub deployer, as in `feeds`. The existing provider must admit
@@ -158,6 +176,8 @@ Optional repository Actions variables:
 | `CLOUD_RUN_SERVICE_ACCOUNT` | `api-proxy-run@PROJECT_ID.iam.gserviceaccount.com` |
 | `GOOGLE_MAPS_API_KEY_SECRET` | `google-maps-api-key` |
 | `GOOGLE_MAPS_API_KEY_SECRET_VERSION` | `1` |
+| `LASTFM_API_KEY_SECRET` | `lastfm-api-key` |
+| `LASTFM_API_KEY_SECRET_VERSION` | `1` |
 
 Configure these before merging the deployment PR if the first `main` push should
 deploy immediately. Without credentials, PR tests can still run; publication

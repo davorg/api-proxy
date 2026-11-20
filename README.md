@@ -1,9 +1,8 @@
 # api-proxy
 
-A small Perl [Dancer2](https://metacpan.org/pod/Dancer2) application that fetches
-Google Maps Embed search responses using a server-side API key. It exposes one
-configured API, `gmap_search`, through a PSGI application. It returns upstream
-HTML rather than a structured places-search JSON result.
+A small Perl [Dancer2](https://metacpan.org/pod/Dancer2) application that
+proxies configured upstream APIs through a PSGI application. The checked-in
+configuration exposes Google Maps Embed search and Last.fm top artists.
 
 The current checkout has confirmed caching and HTTP response defects.
 See the [review and issue list](docs/review.md) before deploying it. The commands
@@ -73,11 +72,12 @@ issues are recorded in the review.
 
 ## Run locally
 
-From the repository root, export the key into the process environment and start
-the PSGI application:
+From the repository root, export the keys for the APIs you want to call and
+start the PSGI application:
 
 ```sh
 export GOOGLE_MAPS_API_KEY='your-api-key'
+export LASTFM_API_KEY='your-lastfm-api-key'
 plackup -I APIProxy/lib -p 5000 APIProxy/bin/app.psgi
 ```
 
@@ -90,21 +90,27 @@ With a running, configured instance:
 ```sh
 curl -i http://127.0.0.1:5000/
 curl -i --get --data-urlencode 'q=Clapham Common' http://127.0.0.1:5000/gmap_search
+curl -i --get --data-urlencode 'method=user.gettopartists' \
+  --data-urlencode 'user=davorg' --data-urlencode 'period=7day' \
+  --data-urlencode 'limit=5' --data-urlencode 'format=json' \
+  http://127.0.0.1:5000/lastfm/
 ```
 
 The second command makes a real upstream request on a cache miss and requires a
-key accepted by Google Maps Embed. A repeated query in the same worker uses the
-cached successful body for up to five minutes.
+key accepted by Google Maps Embed. The Last.fm request requires `LASTFM_API_KEY`.
+Repeated requests in the same worker use the cached successful body for up to
+five minutes.
 
 ## Routes
 
 | Request | Current behavior |
 | --- | --- |
 | `GET /` | Renders the informational landing page |
-| `GET /gmap_search?q=...` | Validates `q` and the environment key, checks cache, then fetches Google Maps Embed search HTML |
+| `GET /gmap_search?q=...` | Fetches Google Maps Embed search HTML using `GOOGLE_MAPS_API_KEY` |
+| `GET /lastfm/?method=user.gettopartists&user=...&period=...&limit=...&format=json` | Fetches Last.fm JSON using `LASTFM_API_KEY` |
 | `GET /<unknown-api>` | Returns a JSON error with status 404 |
-| Missing or whitespace-only `q` | Returns a JSON error with status 400; the string `0` is valid |
-| Missing `GOOGLE_MAPS_API_KEY` | Returns a JSON error with status 500 |
+| Missing or whitespace-only required parameter | Returns a JSON error with status 400; the string `0` is valid |
+| Missing key for a configured API | Returns a JSON error with status 500 |
 | Upstream HTTP failure | Returns a JSON error with status 502; upstream timeouts use 504 |
 | Upstream transport exception | Returns a JSON error with status 502, or 504 when the failure reports a timeout |
 | Upstream redirect chain over five hops | Returns a JSON error with status 502; shorter absolute and relative redirects are followed by LWP |
@@ -112,9 +118,8 @@ cached successful body for up to five minutes.
 
 Error responses use `Content-Type: application/json` and the same wildcard CORS
 header as successful responses. Fresh and cached successful responses both use
-the upstream Content-Type and wildcard CORS. The validation behavior for false
-`q` values is tracked by
-[#11](https://github.com/davorg/api-proxy/issues/11).
+the upstream Content-Type and wildcard CORS. The string `0` is a valid
+parameter value; whitespace-only values are rejected.
 
 The proxy advertises only content encodings supported by its installed
 `HTTP::Message` decoder. It decodes upstream content before caching or returning
@@ -122,12 +127,13 @@ it, and reports unsupported or malformed encodings as a 502 response.
 
 ## Configuration and service operation
 
-The checked-in `APIProxy/apis.yml` defines the `gmap_search` API. Set
+The checked-in `APIProxy/apis.yml` defines the `gmap_search` and `lastfm` APIs. Set
 `APIPROXY_APIS_FILE` to load API definitions from another YAML file; the file
 must contain a mapping from API names to `params`, `url`, and `key` fields, with
 optional `cache` and `timeout` fields. Definitions are loaded and validated at
 process startup. The key field names an environment variable, such as
-`GOOGLE_MAPS_API_KEY`; keep secret values out of the YAML file. The 300-second
+`GOOGLE_MAPS_API_KEY` or `LASTFM_API_KEY`; keep secret values out of the YAML
+file. The 300-second
 cache TTL remains in `APIProxy.pm`. `APIProxy/config.yml` configures CHI's
 [Memory driver](https://metacpan.org/pod/CHI::Driver::Memory) with `global: 0`,
 giving the application a private cache in each process.
@@ -146,6 +152,7 @@ The service wrapper reads `.env` from its working directory. Create an untracked
 
 ```dotenv
 GOOGLE_MAPS_API_KEY=your-api-key
+LASTFM_API_KEY=your-lastfm-api-key
 PROXY_APP_NAME=api-proxy
 PROXY_OWNER=your-service-user
 PROXY_GROUP=your-service-group

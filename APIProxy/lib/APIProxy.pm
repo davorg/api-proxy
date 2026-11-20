@@ -55,7 +55,7 @@ get '/' => sub {
   template 'index' => { 'title' => 'APIProxy' };
 };
 
-get '/:api' => sub {
+my $api_route = sub {
   my $api_name = route_parameters->get('api');
   my $api = $apis->{$api_name};
 
@@ -213,6 +213,9 @@ get '/:api' => sub {
     return error_response($status, $message);
   }
 };
+
+get '/:api'  => $api_route;
+get '/:api/' => $api_route;
 
 sub error_response {
   my ($code, $message) = @_;

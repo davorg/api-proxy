@@ -7,3 +7,15 @@ gmap_search:
   key: GOOGLE_MAPS_API_KEY
   cache: 1
   timeout: 30
+
+lastfm:
+  params:
+    - method
+    - user
+    - period
+    - limit
+    - format
+  url: https://ws.audioscrobbler.com/2.0/?api_key=KEY_HERE
+  key: LASTFM_API_KEY
+  cache: 1
+  timeout: 30

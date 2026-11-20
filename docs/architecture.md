@@ -8,10 +8,10 @@ there is no database, frontend build or background job system.
 
 `APIProxy/lib/APIProxy.pm` contains the application logic. API definitions live
 in `APIProxy/apis.yml` by default; deployments can set `APIPROXY_APIS_FILE` to
-load another YAML file. The checked-in registry currently exposes only
-`gmap_search`. Callers cannot supply an arbitrary initial upstream URL. The
-root route renders `views/index.tt` inside `views/layouts/main.tt`; static
-assets and error pages live under `public`.
+load another YAML file. The checked-in registry exposes `gmap_search` and
+`lastfm`. Callers cannot supply an arbitrary initial upstream URL. The root
+route renders `views/index.tt` inside `views/layouts/main.tt`; static assets
+and error pages live under `public`.
 
 `app_service` supervises Starman through Daemon::Control. The alternative
 `public/dispatch.cgi` and `public/dispatch.fcgi` entry points load the same PSGI
@@ -22,7 +22,7 @@ For Cloud Run, the Docker image runs Starman directly as a non-root user on the
 injected `PORT`. `environments/cloud_run.yml` selects console logging and
 production error settings. `bin/build_container` publishes to Artifact Registry;
 `bin/deploy_container` deploys by digest with a dedicated runtime service account
-and a Secret Manager binding for the Google Maps key. GitHub's two deployment
+and Secret Manager bindings for configured API keys. GitHub's two deployment
 workflows test pull requests and publish/deploy only from `main`. The domain
 mapping for `proxy.davecross.co.uk` is a one-time setup described in
 [DEPLOY.md](../DEPLOY.md).
@@ -35,7 +35,7 @@ flowchart TD
     B -->|No| N[JSON 404]
     B -->|Yes| C[Validate and preserve required query parameters]
     C --> D[Read API key from process environment]
-    D --> E[Look up API name and transformed parameters in CHI]
+    D --> E[Look up API name and preserved parameters in CHI]
     E -->|Hit| F[Log cached request and return cached body]
     E -->|Miss| G[Build upstream URL with key and parameters]
     G --> H[LWP GET with timeout and five redirect hops]
@@ -53,13 +53,17 @@ exceptions are omitted from the diagram for readability.
 
 ## Upstream request construction
 
-The `gmap_search` definition in `APIProxy/apis.yml` supplies:
+The checked-in definitions in `APIProxy/apis.yml` include:
 
 | Field | Value and purpose |
 | --- | --- |
-| `params` | `['q']`, the only forwarded query parameter |
-| `url` | `https://www.google.com/maps/embed/v1/search?key=KEY_HERE` |
-| `key` | `GOOGLE_MAPS_API_KEY`, the environment variable substituted into the URL |
+| `gmap_search.params` | `['q']` |
+| `gmap_search.url` | `https://www.google.com/maps/embed/v1/search?key=KEY_HERE` |
+| `gmap_search.key` | `GOOGLE_MAPS_API_KEY` |
+| `lastfm.params` | `method`, `user`, `period`, `limit`, and `format` |
+| `lastfm.url` | `https://ws.audioscrobbler.com/2.0/?api_key=KEY_HERE` |
+| `lastfm.key` | `LASTFM_API_KEY` |
+| Both APIs | Enable the 300-second cache and use a 30-second timeout |
 | `cache` | `1`, enabling CHI lookups and writes |
 | `timeout` | `30` seconds, passed to LWP::UserAgent |
 

@@ -9,6 +9,8 @@ SERVICE_NAME="${SERVICE_NAME:-api-proxy}"
 RUNTIME_SERVICE_ACCOUNT="${RUNTIME_SERVICE_ACCOUNT:-api-proxy-run@${PROJECT_ID}.iam.gserviceaccount.com}"
 GOOGLE_MAPS_API_KEY_SECRET="${GOOGLE_MAPS_API_KEY_SECRET:-google-maps-api-key}"
 GOOGLE_MAPS_API_KEY_SECRET_VERSION="${GOOGLE_MAPS_API_KEY_SECRET_VERSION:-1}"
+LASTFM_API_KEY_SECRET="${LASTFM_API_KEY_SECRET:-lastfm-api-key}"
+LASTFM_API_KEY_SECRET_VERSION="${LASTFM_API_KEY_SECRET_VERSION:-1}"
 ALLOW_UNAUTH="${ALLOW_UNAUTH:-true}"
 WORKERS="${WORKERS:-2}"
 CONCURRENCY="${CONCURRENCY:-$WORKERS}"
@@ -36,6 +38,10 @@ if [[ ! "$GOOGLE_MAPS_API_KEY_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: GOOGLE_MAPS_API_KEY_SECRET_VERSION must be a numeric version" >&2
     exit 1
 fi
+if [[ ! "$LASTFM_API_KEY_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: LASTFM_API_KEY_SECRET_VERSION must be a numeric version" >&2
+    exit 1
+fi
 if [[ ! "$WORKERS" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: WORKERS must be a positive integer" >&2
     exit 1
@@ -57,7 +63,7 @@ args=(
     --memory "$MEMORY" --cpu 1 --concurrency "$CONCURRENCY" --timeout 60
     --min-instances "$MIN_INSTANCES" --max-instances "$MAX_INSTANCES"
     --update-env-vars "DANCER_ENVIRONMENT=cloud_run,PLACK_ENV=production,WORKERS=${WORKERS}"
-    --update-secrets "GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY_SECRET}:${GOOGLE_MAPS_API_KEY_SECRET_VERSION}"
+    --update-secrets "GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY_SECRET}:${GOOGLE_MAPS_API_KEY_SECRET_VERSION},LASTFM_API_KEY=${LASTFM_API_KEY_SECRET}:${LASTFM_API_KEY_SECRET_VERSION}"
 )
 if [[ "$ALLOW_UNAUTH" == true ]]; then
     args+=(--allow-unauthenticated)
