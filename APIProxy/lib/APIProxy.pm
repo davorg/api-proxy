@@ -5,7 +5,7 @@ use Dancer2::Plugin::Cache::CHI;
 use Time::HiRes qw(time);
 use Try::Tiny;
 
-our $VERSION = '0.1';
+our $VERSION = '1.0.0';
 
 # Configuration
 my $CACHE_TTL = 300;  # 5 minutes

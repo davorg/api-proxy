@@ -9,14 +9,29 @@ IMAGE_NAME="${IMAGE_NAME:-api-proxy}"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG="${TAG:-$(git -C "$repo_root" rev-parse HEAD)}"
 image_path="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}"
-image_tag="${image_path}:${TAG}"
 
-for command in gcloud docker; do
+for command in perl gcloud docker; do
     command -v "$command" >/dev/null 2>&1 || {
         echo "Error: '$command' is required" >&2
         exit 1
     }
 done
+
+# Use the same version source as Makefile.PL without loading the application
+# and requiring its CPAN dependencies on the build host.
+version="$(perl -MExtUtils::MakeMaker -e 'print MM->parse_version($ARGV[0])' \
+    "$repo_root/APIProxy/lib/APIProxy.pm")"
+if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    echo "Error: APIProxy.pm must define a release version as MAJOR.MINOR.PATCH" >&2
+    exit 1
+fi
+tag="${version}-${TAG}"
+if [[ ! "$tag" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+    echo "Error: version and TAG must produce a valid Docker tag of at most 128 characters" >&2
+    exit 1
+fi
+image_tag="${image_path}:${tag}"
+
 docker info >/dev/null
 
 # Provision the repository once, outside routine builds. Authentication or
@@ -26,7 +41,8 @@ gcloud artifacts repositories describe "$AR_REPO" \
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
 docker build --pull --platform linux/amd64 \
-    --file "$repo_root/Dockerfile" --tag "$image_tag" "$repo_root"
+    --file "$repo_root/Dockerfile" --tag "$image_tag" \
+    --label "org.opencontainers.image.version=${version}" "$repo_root"
 docker push "$image_tag"
 
 digest="$(gcloud artifacts docker images describe "$image_tag" \

@@ -11,12 +11,40 @@ workflows test, publish and deploy by immutable image digest. The target is
 | Region | `europe-west1` |
 | Artifact Registry repository | `containers` |
 | Image and Cloud Run service | `api-proxy` |
+| Image tag | Application version plus commit, such as `1.0.0-<full-commit-SHA>` |
 | Runtime service account | `api-proxy-run@PROJECT_ID.iam.gserviceaccount.com` |
 | Secret Manager key | `google-maps-api-key`, version `1` |
 | Container port | Cloud Run's `PORT`, normally `8080` |
 | Workers / request concurrency | `2` / `2` |
 | CPU / memory | `1` / `512Mi` |
 | Minimum / maximum instances | `0` / `3` |
+
+## Versioning
+
+The application release version is defined once in
+[`APIProxy/lib/APIProxy.pm`](APIProxy/lib/APIProxy.pm), starting at `1.0.0`.
+Use stable [Semantic Versioning](https://semver.org/spec/v2.0.0.html): increment
+MAJOR for incompatible API changes, MINOR for compatible features and PATCH for
+compatible fixes. Update `$VERSION` in that file when preparing a release;
+MakeMaker's package version and container tagging both read that value.
+
+`bin/build_container` creates tags in the form `VERSION-TAG`, where `TAG` defaults
+to the full Git commit SHA. For example, a `1.0.0` build is published as:
+
+```text
+europe-west1-docker.pkg.dev/dave-web-apps/containers/api-proxy:1.0.0-<full-commit-SHA>
+```
+
+The image also records the release version in its
+`org.opencontainers.image.version` label. An explicit `TAG` supplies the suffix;
+the script always obtains the version prefix from the application module. It
+validates the stable `MAJOR.MINOR.PATCH` version and Docker tag before contacting
+the registry. Reading the version needs Perl and ExtUtils::MakeMaker on the
+build host, but does not load Dancer2 or the application dependencies.
+
+Tags identify the release version and source commit. Cloud Run deployment and
+rollback continue to use the resolved image digest, so an existing deployment
+stays pinned even if a tag is rebuilt.
 
 ## Container behavior
 
@@ -155,7 +183,8 @@ PROJECT_ID=dave-web-apps REGION=europe-west1 bin/deploy_container
 
 The first script writes the immutable reference to `image_ref.txt`; the second
 reads it or accepts `IMAGE_REF` and writes `service_url.txt`. Neither output is
-tracked. Script overrides include `AR_REPO`, `IMAGE_NAME`, `TAG` for builds, and
+tracked. Script overrides include `AR_REPO`, `IMAGE_NAME`, `TAG` (the suffix after
+the application version) for builds, and
 `SERVICE_NAME`, `RUNTIME_SERVICE_ACCOUNT`, the secret name/version, `WORKERS`,
 `CONCURRENCY`, `MEMORY`, `MIN_INSTANCES`, `MAX_INSTANCES` and `ALLOW_UNAUTH` for
 deployments. `CPU` is fixed to one. The request timeout is 60 seconds.

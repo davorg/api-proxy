@@ -11,7 +11,7 @@ use Symbol qw(gensym);
 use JSON::PP qw(encode_json decode_json);
 
 my $root = tempdir(CLEANUP => 1);
-make_path("$root/bin", "$root/tools");
+make_path("$root/bin", "$root/tools", "$root/APIProxy/lib");
 for my $script (qw(build_container deploy_container)) {
     copy("$FindBin::Bin/../bin/$script", "$root/bin/$script") or die $!;
 }
@@ -59,6 +59,13 @@ sub read_file {
 
 sub run_script {
     my ($script, $overrides, $image_file) = @_;
+    my $version = exists(($overrides || {})->{MOCK_APP_VERSION})
+        ? $overrides->{MOCK_APP_VERSION} : '1.2.3';
+    open my $module, '>', "$root/APIProxy/lib/APIProxy.pm" or die $!;
+    print {$module} "package APIProxy;\n";
+    print {$module} "our \$VERSION = '$version';\n" if defined $version;
+    print {$module} "die 'The build host must not load the application';\n";
+    close $module;
     local %ENV = (
         PATH => "$root/tools:$ENV{PATH}",
         PROJECT_ID => 'test-project',
@@ -89,10 +96,35 @@ subtest 'build publishes an amd64 image and outputs only its digest to Actions' 
     my ($build) = grep { $_->[0] eq 'docker' && $_->[1] eq 'build' } @$commands;
     ok($build, 'Docker build was invoked');
     like(join(' ', @$build), qr/--platform linux\/amd64/, 'Cloud Run architecture is explicit');
-    like(join(' ', @$build), qr/--tag \Q$image_path\E:test-commit/, 'Build is tagged with the commit');
-    ok((grep { $_->[0] eq 'docker' && $_->[1] eq 'push' } @$commands), 'Image is pushed');
+    like(join(' ', @$build), qr/--tag \Q$image_path\E:1\.2\.3-test-commit/, 'Build tag includes the application version and commit');
+    like(join(' ', @$build), qr/--label org\.opencontainers\.image\.version=1\.2\.3/, 'Image metadata records the application version');
+    my ($push) = grep { $_->[0] eq 'docker' && $_->[1] eq 'push' } @$commands;
+    is_deeply($push, ['docker', 'push', "$image_path:1.2.3-test-commit"], 'Versioned image is pushed');
+    my ($describe) = grep { $_->[0] eq 'gcloud' && $_->[1] eq 'artifacts' && $_->[2] eq 'docker' } @$commands;
+    is($describe->[5], "$image_path:1.2.3-test-commit", 'Digest is resolved from the versioned tag');
     is(read_file("$root/image_ref.txt"), "$image_ref\n", 'Local output pins the registry digest');
     is(read_file("$root/output.txt"), "digest=$digest\n", 'Only digest crosses the workflow boundary');
+};
+
+subtest 'the module version is the source for every build' => sub {
+    my ($exit, $commands) = run_script('build_container', { MOCK_APP_VERSION => '2.4.6' });
+    is($exit, 0, 'A later release version builds successfully');
+    my ($build) = grep { $_->[0] eq 'docker' && $_->[1] eq 'build' } @$commands;
+    like(join(' ', @$build), qr/--tag \Q$image_path\E:2\.4\.6-test-commit/, 'Changing only the module version changes the tag');
+    like(join(' ', @$build), qr/org\.opencontainers\.image\.version=2\.4\.6/, 'Image metadata follows the same version');
+};
+
+subtest 'invalid versions and tags fail before registry access' => sub {
+    for my $version (undef, '', '1.2', '01.2.3', '1.02.3', '1.2.03', '1.2.3.4') {
+        my ($exit, $commands) = run_script('build_container', { MOCK_APP_VERSION => $version });
+        isnt($exit, 0, 'Invalid release version is rejected');
+        is(scalar @$commands, 0, 'No Docker or cloud commands run');
+    }
+    for my $tag ('bad/tag', "bad\ntag", 'a' x 128) {
+        my ($exit, $commands) = run_script('build_container', { TAG => $tag });
+        isnt($exit, 0, 'Invalid combined Docker tag is rejected');
+        is(scalar @$commands, 0, 'No Docker or cloud commands run');
+    }
 };
 
 subtest 'registry and digest failures stop the build' => sub {
