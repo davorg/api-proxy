@@ -108,3 +108,19 @@ The resulting environment used Perl 5.42.3, Dancer2 2.3.0 and Template 3.106.
 - The full suite runs all ten assertions. Only the two Google Maps success
   assertions fail with the key unset, as tracked in
   [#12](https://github.com/davorg/api-proxy/issues/12).
+
+## Test isolation follow-up
+
+The default suite for [#12](https://github.com/davorg/api-proxy/issues/12) now
+passes with the API key unset. The Google Maps route test supplies a scoped
+dummy key and HTML fixture, guards against unexpected HTTP, and uses a private
+memory cache. It checks that invalid requests do not call upstream, a first
+valid request makes exactly one mocked call, a repeat request uses the cached
+fixture, and clearing the cache causes another fetch.
+
+`APIProxy/xt/gmap_search_live.t` is a separate real-provider smoke check, gated by
+`API_PROXY_LIVE_TESTS=1` and a real `GOOGLE_MAPS_API_KEY`. Both route tests are
+included in the application distribution manifest. The default test command
+does not run the live check; explicitly including `xt` without the flag reports
+it as skipped. Runtime fixes, including production cache configuration in
+[#5](https://github.com/davorg/api-proxy/issues/5), remain separate.
