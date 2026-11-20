@@ -106,6 +106,7 @@ cached successful body for up to five minutes.
 | Missing `GOOGLE_MAPS_API_KEY` | Returns a JSON error with status 500 |
 | Upstream HTTP failure | Returns a JSON error with status 502; upstream timeouts use 504 |
 | Upstream transport exception | Returns a JSON error with status 502, or 504 when the failure reports a timeout |
+| Upstream redirect chain over five hops | Returns a JSON error with status 502; shorter absolute and relative redirects are followed by LWP |
 
 Error responses use `Content-Type: application/json` and the same wildcard CORS
 header as fresh successful responses. Successful upstream response metadata on
