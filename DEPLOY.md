@@ -1,9 +1,9 @@
 # Deploy api-proxy to Google Cloud Run
 
 The deployment follows [davorg/feeds](https://github.com/davorg/feeds/blob/main/DEPLOY.md):
-two scripts build/push a container and deploy it, and two GitHub Actions
-workflows test, publish and deploy by immutable image digest. The target is
-`https://proxy.davecross.co.uk`.
+two scripts build/push a container and deploy it, while three GitHub Actions
+workflows test routine changes, build tagged releases, and deploy successful
+release images by immutable digest. The target is `https://proxy.davecross.co.uk`.
 
 | Setting | Default |
 | --- | --- |
@@ -11,7 +11,7 @@ workflows test, publish and deploy by immutable image digest. The target is
 | Region | `europe-west1` |
 | Artifact Registry repository | `containers` |
 | Image and Cloud Run service | `api-proxy` |
-| Image tag | Application version plus commit, such as `1.0.0-<full-commit-SHA>` |
+| Image tag | Application version plus commit, such as `2.0.0-<full-commit-SHA>` |
 | Runtime service account | `api-proxy-run@PROJECT_ID.iam.gserviceaccount.com` |
 | Secret Manager key | `google-maps-api-key`, version `1` |
 | Container port | Cloud Run's `PORT`, normally `8080` |
@@ -28,19 +28,32 @@ MAJOR for incompatible API changes, MINOR for compatible features and PATCH for
 compatible fixes. Update `$VERSION` in that file when preparing a release;
 MakeMaker's package version and container tagging both read that value.
 
-`bin/build_container` creates tags in the form `VERSION-TAG`, where `TAG` defaults
-to the full Git commit SHA. For example, a `1.0.0` build is published as:
+After the version change has merged to `main`, create and push a matching
+version tag to release it. Tags must use `vMAJOR.MINOR.PATCH`, match `$VERSION`,
+and point to a commit on `main`. For example:
+
+```sh
+git switch main
+git pull --ff-only
+git tag -a v2.0.1 -m "Release v2.0.1"
+git push origin v2.0.1
+```
+
+The build workflow rejects tags that do not match the application version or
+point outside `main`. It creates the container tag in the form
+`VERSION-<full-commit-SHA>`, without the leading `v`. For example, a `v2.0.1`
+tag is published as:
 
 ```text
-europe-west1-docker.pkg.dev/dave-web-apps/containers/api-proxy:1.0.0-<full-commit-SHA>
+europe-west1-docker.pkg.dev/dave-web-apps/containers/api-proxy:2.0.1-<full-commit-SHA>
 ```
 
 The image also records the release version in its
-`org.opencontainers.image.version` label. An explicit `TAG` supplies the suffix;
-the script always obtains the version prefix from the application module. It
-validates the stable `MAJOR.MINOR.PATCH` version and Docker tag before contacting
-the registry. Reading the version needs Perl and ExtUtils::MakeMaker on the
-build host, but does not load Dancer2 or the application dependencies.
+`org.opencontainers.image.version` label. The build script always obtains the
+version prefix from the application module and validates the stable
+`MAJOR.MINOR.PATCH` version and Docker tag before contacting the registry.
+Reading the version needs Perl and ExtUtils::MakeMaker on the build host, but
+does not load Dancer2 or the application dependencies.
 
 Tags identify the release version and source commit. Cloud Run deployment and
 rollback continue to use the resolved image digest, so an existing deployment
@@ -130,12 +143,25 @@ variable below, and redeploy a known image digest. The runtime account needs
 access to these secrets, not project-wide editor privileges.
 
 Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation)
-for the GitHub deployer, as in `feeds`. The existing provider must admit
-`davorg/api-proxy` on `refs/heads/main`, with `attribute.repository` mapped from
-`assertion.repository`; preserve rules for other repositories when extending it.
-Bind this repository's principal to the deployer service account with
-`roles/iam.workloadIdentityUser`. A separate provider restricted to this
-repository/main branch also works. No downloaded service-account key is needed.
+for GitHub Actions, as in `feeds`. The build workflow authenticates from a
+release tag, so the provider must admit `davorg/api-proxy` on both
+`refs/heads/main` and `refs/tags/v*`, with `attribute.repository` mapped from
+`assertion.repository`. For a shared provider, the condition can preserve
+existing access for other `davorg` repositories while restricting this repo to
+the release refs:
+
+```cel
+assertion.repository_owner == 'davorg' &&
+(assertion.repository != 'davorg/api-proxy' ||
+ assertion.ref == 'refs/heads/main' ||
+ assertion.ref.startsWith('refs/tags/v'))
+```
+
+Bind the repository-scoped principal set
+`attribute.repository/davorg/api-proxy` to the deployer service account with
+`roles/iam.workloadIdentityUser`. The deploy workflow runs after the tagged
+build and uses the default branch ref. No downloaded service-account key is
+needed.
 
 The deployer needs:
 
@@ -179,20 +205,25 @@ Optional repository Actions variables:
 | `LASTFM_API_KEY_SECRET` | `lastfm-api-key` |
 | `LASTFM_API_KEY_SECRET_VERSION` | `1` |
 
-Configure these before merging the deployment PR if the first `main` push should
-deploy immediately. Without credentials, PR tests can still run; publication
-and deployment cannot authenticate. Do not put the API-key payload in these
-variables: the Cloud Run runtime identity reads it from Secret Manager.
+Configure these before pushing the first release tag. Pull-request and `main`
+tests do not need Google credentials; release image builds and deployment do.
+Do not put the API-key payload in these variables: the Cloud Run runtime identity
+reads it from Secret Manager.
 
-`.github/workflows/build.yml` runs script tests, builds the Linux amd64 image,
-runs offline application tests in the container, and checks startup as a non-root
-user with a read-only filesystem on port `8081`. Pull requests stop there.
-Successful `main` builds authenticate with WIF, publish the tested commit and
-call `.github/workflows/deploy.yml` with only its digest. Passing the digest
-avoids GitHub suppressing outputs containing a project ID stored as a secret.
-Deployments run only from `main` and are serialized.
+`.github/workflows/test.yml` runs script tests, builds the Linux amd64 test
+container, runs offline application tests, and checks startup as a non-root user
+with a read-only filesystem on port `8081`. It runs on pull requests and pushes
+to `main`. It never publishes or deploys.
 
-The deploy workflow also accepts a digest through manual dispatch for rollback.
+`.github/workflows/build.yml` runs only for a pushed `vMAJOR.MINOR.PATCH` tag.
+It verifies the tag, builds and publishes the versioned image, then saves its
+immutable reference as a workflow artifact. `.github/workflows/deploy.yml` runs
+after a successful release build, downloads that artifact, and deploys the image
+by digest. Build and deployment runs are serialized separately.
+
+The deploy workflow accepts a digest for rollback only when manually dispatched
+on a matching version tag. Select the release tag in GitHub Actions and provide
+the prior digest.
 Both scripts use explicit project/region flags and do not change the caller's
 global gcloud project settings. Local use with an authenticated gcloud session:
 
@@ -201,7 +232,9 @@ PROJECT_ID=dave-web-apps REGION=europe-west1 bin/build_container
 PROJECT_ID=dave-web-apps REGION=europe-west1 bin/deploy_container
 ```
 
-The first script writes the immutable reference to `image_ref.txt`; the second
+These local commands are for manual operations; automated release builds and
+deployments are tag-gated. The first script writes the immutable reference to
+`image_ref.txt`; the second
 reads it or accepts `IMAGE_REF` and writes `service_url.txt`. Neither output is
 tracked. Script overrides include `AR_REPO`, `IMAGE_NAME`, `TAG` (the suffix after
 the application version) for builds, and
@@ -251,8 +284,8 @@ Container smoke tests exercise `/` without a real API key. Known query/response
 defects remain tracked separately; successful deployment alone does not fix
 them.
 
-To roll back, dispatch the Deploy to Cloud Run workflow on `main` with a prior
-`sha256:...` digest from this app's Artifact Registry image, or run:
+To roll back, dispatch the Deploy to Cloud Run workflow on a matching release
+tag with a prior `sha256:...` digest from this app's Artifact Registry image, or run:
 
 ```sh
 IMAGE_REF="${REGION}-docker.pkg.dev/${PROJECT_ID}/containers/api-proxy@sha256:..." \

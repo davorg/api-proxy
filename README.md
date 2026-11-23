@@ -208,9 +208,10 @@ for the release and tagging rules.
 ## Google Cloud Run
 
 The Cloud Run deployment targets `https://proxy.davecross.co.uk` and follows the
-`feeds` build/deploy pattern. Pull requests test the container; successful
-`main` builds publish to Artifact Registry and deploy by immutable image digest
-with Workload Identity Federation. The API key is supplied from Secret Manager.
+`feeds` build/deploy pattern. Pull requests and pushes to `main` run tests.
+Pushing a matching `vMAJOR.MINOR.PATCH` release tag builds the versioned image
+and triggers deployment by immutable image digest with Workload Identity
+Federation. The API key is supplied from Secret Manager.
 
 See [DEPLOY.md](DEPLOY.md) for Google Cloud and GitHub setup, the one-time custom
 domain/DNS steps, local container commands and rollback. The Cloud Run container

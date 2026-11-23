@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-run-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test deployment scripts without cloud access
+        run: prove -lv t/deployment_scripts.t
+      - name: Build Linux test container
+        run: docker build --pull --platform linux/amd64 --tag api-proxy:test .
+      - name: Run offline application tests
+        run: docker run --rm --entrypoint prove api-proxy:test -IAPIProxy/lib -lr APIProxy/t
+      - name: Smoke test non-root container on a non-default port
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="$(docker run --detach --read-only --tmpfs /tmp \
+            --publish 127.0.0.1:8081:8081 --env PORT=8081 api-proxy:test)"
+          trap 'docker logs "$container"; docker rm --force "$container" >/dev/null' EXIT
+          test "$(docker exec "$container" id -u)" != 0
+          for _attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8081/ > /tmp/api-proxy-index.html; then
+              grep --quiet '<title>API Proxy</title>' /tmp/api-proxy-index.html
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Container did not become ready' >&2
+          exit 1

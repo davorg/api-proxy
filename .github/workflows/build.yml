@@ -1,51 +1,19 @@
-name: Build container
+name: Build release image
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloud-run-build-${{ github.ref }}
+  group: release-build-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Test deployment scripts without cloud access
-        run: prove -lv t/deployment_scripts.t
-      - name: Build Linux container
-        run: docker build --pull --platform linux/amd64 --tag api-proxy:test .
-      - name: Run offline application tests
-        run: docker run --rm --entrypoint prove api-proxy:test -IAPIProxy/lib -lr APIProxy/t
-      - name: Smoke test non-root container on a non-default port
-        shell: bash
-        run: |
-          set -euo pipefail
-          container="$(docker run --detach --read-only --tmpfs /tmp \
-            --publish 127.0.0.1:8081:8081 --env PORT=8081 api-proxy:test)"
-          trap 'docker logs "$container"; docker rm --force "$container" >/dev/null' EXIT
-          test "$(docker exec "$container" id -u)" != 0
-          for _attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:8081/ > /tmp/api-proxy-index.html; then
-              grep --quiet '<title>API Proxy</title>' /tmp/api-proxy-index.html
-              exit 0
-            fi
-            sleep 1
-          done
-          echo 'Container did not become ready' >&2
-          exit 1
-
-  publish:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,10 +24,24 @@ jobs:
       AR_REPO: ${{ vars.GCP_AR_REPO || 'containers' }}
       IMAGE_NAME: api-proxy
       TAG: ${{ github.sha }}
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(perl -MExtUtils::MakeMaker -e 'print MM->parse_version($ARGV[0])' \
+            APIProxy/lib/APIProxy.pm)"
+          if [[ "$GITHUB_REF_NAME" != "v${version}" ]]; then
+            echo "Error: release tag '$GITHUB_REF_NAME' must match application version 'v${version}'" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Error: release tags must point to a commit on main" >&2
+            exit 1
+          fi
       - name: Google Auth (WIF)
         uses: google-github-actions/auth@v3
         with:
@@ -68,15 +50,12 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v3
       - id: build
-        name: Build and push the tested commit
+        name: Build and push release image
         run: bin/build_container
-
-  deploy:
-    needs: publish
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/deploy.yml
-    with:
-      digest: ${{ needs.publish.outputs.digest }}
-    secrets: inherit
+      - name: Save immutable image reference for deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-image-ref
+          path: image_ref.txt
+          if-no-files-found: error
+          retention-days: 7

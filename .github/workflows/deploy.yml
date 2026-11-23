@@ -1,15 +1,13 @@
 name: Deploy to Cloud Run
 
 on:
-  workflow_call:
-    inputs:
-      digest:
-        required: true
-        type: string
+  workflow_run:
+    workflows: [Build release image]
+    types: [completed]
   workflow_dispatch:
     inputs:
       digest:
-        description: 'Immutable sha256 digest from a successful build'
+        description: 'Immutable sha256 digest from a successful release build'
         required: true
         type: string
 
@@ -19,9 +17,12 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
@@ -35,9 +36,38 @@ jobs:
       GOOGLE_MAPS_API_KEY_SECRET_VERSION: ${{ vars.GOOGLE_MAPS_API_KEY_SECRET_VERSION || '1' }}
       LASTFM_API_KEY_SECRET: ${{ vars.LASTFM_API_KEY_SECRET || 'lastfm-api-key' }}
       LASTFM_API_KEY_SECRET_VERSION: ${{ vars.LASTFM_API_KEY_SECRET_VERSION || '1' }}
-      IMAGE_DIGEST: ${{ inputs.digest }}
+      MANUAL_DIGEST: ${{ inputs.digest }}
     steps:
       - uses: actions/checkout@v7
+      - name: Download release image reference
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v5
+        with:
+          name: release-image-ref
+          path: release-image
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Resolve immutable image reference
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+            image_ref="$(cat release-image/image_ref.txt)"
+          else
+            version="$(perl -MExtUtils::MakeMaker -e 'print MM->parse_version($ARGV[0])' \
+              APIProxy/lib/APIProxy.pm)"
+            if [[ "$GITHUB_REF_NAME" != "v${version}" ]]; then
+              echo "Error: manual deployment must use the matching release tag v${version}" >&2
+              exit 1
+            fi
+            if [[ ! "$MANUAL_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo 'Error: digest must be sha256 followed by 64 lowercase hexadecimal characters' >&2
+              exit 1
+            fi
+            image_ref="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}@${MANUAL_DIGEST}"
+          fi
+          printf 'image_ref=%s\n' "$image_ref" >> "$GITHUB_OUTPUT"
       - name: Google Auth (WIF)
         uses: google-github-actions/auth@v3
         with:
@@ -46,6 +76,6 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v3
       - name: Deploy immutable image
-        run: |
-          export IMAGE_REF="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}@${IMAGE_DIGEST}"
-          bin/deploy_container
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+        run: bin/deploy_container
