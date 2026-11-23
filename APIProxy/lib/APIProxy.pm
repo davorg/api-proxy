@@ -11,7 +11,7 @@ use Time::HiRes qw(time);
 use Try::Tiny;
 use YAML ();
 
-our $VERSION = '1.0.2';
+our $VERSION = '2.0.0';
 
 # Configuration
 my $CACHE_TTL = 300;  # 5 minutes
