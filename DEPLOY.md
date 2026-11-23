@@ -146,10 +146,22 @@ Use [Workload Identity Federation](https://github.com/google-github-actions/auth
 for GitHub Actions, as in `feeds`. The build workflow authenticates from a
 release tag, so the provider must admit `davorg/api-proxy` on both
 `refs/heads/main` and `refs/tags/v*`, with `attribute.repository` mapped from
-`assertion.repository`; preserve rules for other repositories when extending it.
-The deploy workflow runs after the tagged build and uses the default branch ref.
-Bind this repository's principal to the deployer service account with
-`roles/iam.workloadIdentityUser`. No downloaded service-account key is needed.
+`assertion.repository`. For a shared provider, the condition can preserve
+existing access for other `davorg` repositories while restricting this repo to
+the release refs:
+
+```cel
+assertion.repository_owner == 'davorg' &&
+(assertion.repository != 'davorg/api-proxy' ||
+ assertion.ref == 'refs/heads/main' ||
+ assertion.ref.startsWith('refs/tags/v'))
+```
+
+Bind the repository-scoped principal set
+`attribute.repository/davorg/api-proxy` to the deployer service account with
+`roles/iam.workloadIdentityUser`. The deploy workflow runs after the tagged
+build and uses the default branch ref. No downloaded service-account key is
+needed.
 
 The deployer needs:
 
