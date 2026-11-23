@@ -92,9 +92,10 @@ my $api_route = sub {
     if (defined $cached_response) {
       my $duration = time() - $start_time;
       log_request($api_name, $params, 'cached', $duration);
-      return success_response(
+      return upstream_response(
+        $cached_response->{status},
         $cached_response->{content},
-        $cached_response->{content_type},
+        $cached_response->{headers},
       );
     }
   }
@@ -164,58 +165,41 @@ my $api_route = sub {
     );
   }
 
-  # LWP follows relative and absolute redirects up to this UA's configured
-  # limit. A redirect response still present here has exceeded that limit.
-  if ($response->is_redirect) {
-    my $duration = time() - $start_time;
-    log_request($api_name, $params, 'redirect_limit', $duration);
-    return error_response(502, 'Upstream API exceeded the redirect limit');
-  }
-
-  # Handle response
-  if ($response->is_success) {
-    my $content;
-    my $decode_error;
+  # Preserve the upstream representation when possible. If decoding fails,
+  # use the original content and retain its content-encoding metadata.
+  my $content = $response->content;
+  my $content_decoded = 0;
+  if ($response->header('Content-Encoding')) {
     try {
-      $content = $response->decoded_content(raise_error => 1);
+      my $decoded_content = $response->decoded_content(raise_error => 1);
+      if (defined $decoded_content) {
+        $content = $decoded_content;
+        $content_decoded = 1;
+      }
     } catch {
-      $decode_error = $_;
+      # The original body and encoding headers remain available as a fallback.
     };
-
-    unless (defined $content) {
-      my $duration = time() - $start_time;
-      log_request($api_name, $params, 'decode_error', $duration);
-      warn "Failed to decode upstream response: $decode_error\n";
-      return error_response(502, 'Upstream API returned unsupported or invalid content encoding');
-    }
-        
-    my $upstream_content_type = $response->header('Content-Type');
-
-    # Cache the body and metadata together. The entry itself marks a hit, even
-    # when the successful response body is empty.
-    if ($api->{cache}) {
-      cache->set($cache_key, {
-        content      => $content,
-        content_type => $upstream_content_type,
-      }, $CACHE_TTL);
-    }
-
-    my $duration = time() - $start_time;
-    log_request($api_name, $params, 'success', $duration);
-
-    return success_response($content, $upstream_content_type);
-  } else {
-    my $duration = time() - $start_time;
-    log_request($api_name, $params, 'error', $duration);
-    my $timed_out = $response->code == 408
-      || $response->code == 504
-      || $response->status_line =~ /timeout|timed?\s*out/i;
-    my $status = $timed_out ? 504 : 502;
-    my $message = $timed_out
-      ? 'Upstream API request timed out'
-      : 'Upstream API returned HTTP ' . $response->code;
-    return error_response($status, $message);
   }
+
+  my $headers = upstream_headers($response, $content_decoded);
+
+  # Cache complete successful responses. Keep the existing policy of fetching
+  # upstream errors again rather than caching a transient failure.
+  if ($api->{cache} && $response->is_success) {
+    cache->set($cache_key, {
+      status  => $response->code,
+      content => $content,
+      headers => $headers,
+    }, $CACHE_TTL);
+  }
+
+  my $duration = time() - $start_time;
+  my $log_status = $response->is_success
+    ? 'success'
+    : 'upstream_' . $response->code;
+  log_request($api_name, $params, $log_status, $duration);
+
+  return upstream_response($response->code, $content, $headers);
 };
 
 get '/:api'  => $api_route;
@@ -229,10 +213,48 @@ sub error_response {
   return to_json({ error => $message });
 }
 
-sub success_response {
-  my ($content, $upstream_content_type) = @_;
-  content_type $upstream_content_type if defined $upstream_content_type;
-  response_header 'Access-Control-Allow-Origin' => '*';
+sub upstream_headers {
+  my ($response, $decoded) = @_;
+
+  my %excluded = map { $_ => 1 } qw(
+    connection keep-alive proxy-authenticate proxy-authorization proxy-connection
+    te trailer transfer-encoding upgrade
+  );
+  if ($decoded) {
+    $excluded{$_} = 1
+      for qw(content-encoding content-length content-md5 digest content-digest repr-digest);
+  }
+
+  my $connection = $response->header('Connection') // '';
+  $excluded{lc $_} = 1 for grep { length } split /\s*,\s*/, $connection;
+
+  my @headers;
+  $response->headers->scan(sub {
+    my ($name, $value) = @_;
+    return if $excluded{lc $name};
+    push @headers, [ $name, $value ];
+  });
+
+  return \@headers;
+}
+
+sub upstream_response {
+  my ($upstream_status, $content, $headers) = @_;
+  status $upstream_status;
+
+  my %seen_headers;
+  for my $header (@{ $headers || [] }) {
+    my ($name, $value) = @$header;
+    my $normalized_name = lc $name;
+    if ($seen_headers{$normalized_name}++) {
+      push_response_header $name => $value;
+    } else {
+      response_header $name => $value;
+    }
+  }
+  response_header 'Access-Control-Allow-Origin' => '*'
+    unless $seen_headers{'access-control-allow-origin'};
+
   return $content;
 }
 
